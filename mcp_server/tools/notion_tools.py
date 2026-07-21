@@ -7,6 +7,7 @@ from pydantic import Field
 from fastmcp import FastMCP, Context
 
 from mcp_server.server import get_milvus_service
+from src.utils.auth import verify_collection_access
 from src.config import MILVUS_COLLECTION_NAME, logger
 
 
@@ -60,51 +61,76 @@ class MCPToolRegistry:
                     ),
                 ),
             ] = MILVUS_COLLECTION_NAME,
+            token: Annotated[
+                str | None,
+                Field(
+                    description=(
+                        "JWT Bearer authorization token with scope for the target collection "
+                        "(e.g. 'Rivyo_docs' or 'Editly_Order_Editing_App'). "
+                        "Can also be supplied via standard Authorization HTTP header."
+                    ),
+                ),
+            ] = None,
             ctx: Context = None,
         ) -> str:
             """
-            Search indexed Notion pages using hybrid semantic + BM25 retrieval.
+            Search indexed Notion documentation for content relevant to a natural-language query.
 
-            Sends the query to the Milvus hybrid search engine, which runs a dense
-            COSINE vector search and a sparse BM25 keyword search simultaneously.
-            Both result sets are merged using Reciprocal Rank Fusion (k=60) and the
-            top-ranked chunks are returned as a JSON string.
+            The tool searches the specified Milvus collection and returns the most relevant
+            documentation chunks as a JSON string. Results include the document title,
+            source URL, relevance score, chunk index, and extracted text. The returned
+            content is intended for retrieval-augmented generation (RAG) and should be
+            used as supporting context when answering user questions.
+
+            Access to the target collection requires a valid JWT Bearer token, which may be
+            provided directly or through the request's Authorization header.
 
             Args:
-                query: Natural-language question or keyword phrase to search for.
-                limit: Number of chunks to return (1–20, default 5).
-                collection_name: Target Milvus collection name.
+                query: Natural-language search query.
+                limit: Maximum number of results to return (1–20).
+                collection_name: Name of the Milvus collection to search.
+                token: Optional JWT Bearer token for collection authorization.
 
             Returns:
-                A JSON-formatted string with the following structure::
-
-                    {
-                    "query": "<original query>",
-                    "collection": "<collection name>",
-                    "total_results": <int>,
-                    "results": [
-                        {
-                        "rank": 1,
-                        "score": 0.032,
-                        "title": "Product Q&A",
-                        "url": "https://app.notion.com/p/...",
-                        "chunk_index": 0,
-                        "text": "..."
-                        },
-                        ...
-                    ]
-                    }
+                A JSON-formatted string containing the search results or an authorization
+                error response.
 
             Raises:
-                ValueError: When the collection does not exist in Milvus.
-                RuntimeError: When Milvus credentials are not configured.
+                RuntimeError: If the search backend is unavailable or not configured.
+                ValueError: If the specified collection is invalid.
             """
             logger.info(
                 f"[MCP:search] query='{query}' | limit={limit} | collection='{collection_name}'"
             )
 
+            token_to_verify = token
+            if not token_to_verify and ctx:
+                try:
+                    if hasattr(ctx, "request_context") and ctx.request_context:
+                        req = getattr(ctx.request_context, "request", None)
+                        if req and hasattr(req, "headers"):
+                            token_to_verify = req.headers.get("authorization") or req.headers.get("x-authorization")
+                except Exception as exc:
+                    logger.debug(f"[MCP:auth] Error extracting header from context: {exc}")
+
+            is_authorized, reason = verify_collection_access(token_to_verify, collection_name)
+            if not is_authorized:
+                logger.warning(
+                    f"[MCP:auth] Access DENIED for collection '{collection_name}': {reason}"
+                )
+                return json.dumps(
+                    {
+                        "status": "unauthorized",
+                        "error": reason,
+                        "collection": collection_name,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
             try:
                 service = get_milvus_service()
+
                 raw_results = service.search(
                     query=query,
                     collection_name=collection_name,

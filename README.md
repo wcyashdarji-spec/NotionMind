@@ -106,6 +106,44 @@ python mcp_server/server.py
 
 ---
 
+## API Endpoints
+
+- `POST /api/ingest` – Crawls Notion documentation and indexes vector chunks into Milvus.
+- `POST /api/update` – Re-crawls Notion documentation, replaces/recreates collection content, and indexes fresh vector chunks.
+  - **Body parameters**:
+    - `root_id` *(optional)*: Root page/database UUID to crawl.
+    - `collection_name` *(optional)*: Target Milvus collection name.
+    - `chunk_size` *(optional)*: Character size per chunk (default `2000`).
+    - `chunk_overlap` *(optional)*: Overlap character budget between chunks (default `500`).
+- `POST /api/search` – Executes hybrid dense + BM25 sparse similarity search with RRF reranking.
+- `POST /api/agent/chat` – Pydantic AI agent prompt endpoint.
+
+---
+
+## Collection Authorization & Token Generation
+
+The FastMCP server enforces **utility-wise collection access control** using JWT Bearer tokens. Each token defines an authorized collection scope (e.g. `Rivyo_docs` or `Editly_Order_Editing_App`). A token scoped for `Rivyo_docs` cannot access `Editly_Order_Editing_App` and vice-versa.
+
+### Generate a Bearer Token
+
+Run the included token generator script:
+
+```bash
+# Generate token scoped for Rivyo_docs
+python scripts/generate_token.py --collection Rivyo_docs
+
+# Generate token scoped for Editly_Order_Editing_App
+python scripts/generate_token.py --collection Editly_Order_Editing_App --expires-days 60
+```
+
+### Passing Token to MCP Tools
+
+Tokens can be passed via the `token` argument in MCP tool calls or as a standard HTTP `Authorization: Bearer <token>` header when connecting to the FastMCP server.
+
+---
+
+
+
 ## Configuration
 
 Create a `.env` file in the project root.

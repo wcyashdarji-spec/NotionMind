@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 
 from src.config import logger
-from src.routes import health, ingest, logs, search, agent
+from src.database import init_db
+from src.routes import agent, health, ingest, logs, search
 
 app = FastAPI(
     title="Notion → Zilliz Milvus Ingestion Service",
@@ -41,7 +42,9 @@ async def root() -> dict[str, str]:
 
 @app.on_event("startup")
 def on_startup() -> None:
-    """Log a startup message when the ASGI server is ready."""
+    """Log a startup message and initialize database tables when the ASGI server is ready."""
+    logger.info("Initializing database schema...")
+    init_db()
     logger.info("Notion Ingestion Service is up and ready.")
 
 

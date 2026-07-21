@@ -46,3 +46,55 @@ class SearchRequest(BaseModel):
         le=100,
         description="Maximum number of results to return.",
     )
+
+class UpdateRequest(BaseModel):
+    """Request body for updating collection content."""
+
+    root_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "UUID of the root Notion page or database to crawl for update. "
+            "When omitted the entire workspace is scanned."
+        ),
+    )
+    collection_name: Optional[str] = Field(
+        default=None,
+        description="Target Milvus collection name. Falls back to MILVUS_COLLECTION_NAME env var.",
+    )
+    chunk_size: int = Field(
+        default=2000,
+        ge=100,
+        le=10000,
+        description="Max character count per text chunk.",
+    )
+    chunk_overlap: int = Field(
+        default=500,
+        ge=0,
+        le=2000,
+        description="Overlap character count between consecutive chunks.",
+    )
+
+
+class IngestResponse(BaseModel):
+    """Response body for the ingestion endpoint."""
+
+    status: str = Field(..., description="Status of the ingestion operation.")
+    root_id: Optional[str] = Field(None, description="Root Notion page/database UUID crawled.")
+    collection_name: str = Field(..., description="Target collection name.")
+    pages_ingested: int = Field(..., description="Number of Notion pages processed.")
+    vector_chunks_created: int = Field(..., description="Total vector chunks indexed.")
+    created_at: Optional[str] = Field(None, description="Timestamp when the collection record was created in Postgres.")
+    updated_at: Optional[str] = Field(None, description="Timestamp when the collection record was last updated in Postgres.")
+
+
+class UpdateResponse(BaseModel):
+    """Response body for the collection content update endpoint."""
+
+    status: str = Field(..., description="Status of the update operation.")
+    root_id: Optional[str] = Field(None, description="Root Notion page/database UUID crawled.")
+    pages_ingested: int = Field(..., description="Number of Notion pages processed.")
+    vector_chunks_created: int = Field(..., description="Total vector chunks indexed.")
+    collection_name: str = Field(..., description="Target collection updated.")
+    message: str = Field(..., description="Summary message.")
+    created_at: Optional[str] = Field(None, description="Timestamp when the collection record was created in Postgres.")
+    updated_at: Optional[str] = Field(None, description="Timestamp when the collection record was last updated in Postgres.")

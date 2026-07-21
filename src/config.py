@@ -14,6 +14,11 @@ MILVUS_COLLECTION_NAME: str = os.getenv("MILVUS_COLLECTION_NAME", "notion_docume
 
 EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
+JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY")
+JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+
+DATABASE_URL: str = os.getenv("DATABASE_URL")
+
 LOGS_DIR = Path("logs")
 LOGS_DIR.mkdir(exist_ok=True)
 LOG_FILE_PATH = LOGS_DIR / "app.log"
