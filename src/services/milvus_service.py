@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict, List
 
 from pymilvus import (
@@ -73,7 +74,7 @@ class MilvusService:
             raise RuntimeError(f"Milvus connection failed: {exc}") from exc
 
 
-    def setup_collection(self, collection_name: str, recreate: bool = False) -> None:
+    async def setup_collection(self, collection_name: str, recreate: bool = False) -> None:
         """
         Create or verify the Milvus collection used for storing document chunks.
 
@@ -95,17 +96,19 @@ class MilvusService:
             Exception: Propagates any Milvus SDK error.
         """
         try:
-            if recreate and self.client.has_collection(collection_name):
+            has_col = await asyncio.to_thread(self.client.has_collection, collection_name)
+            if recreate and has_col:
                 logger.info(f"Dropping existing collection '{collection_name}' …")
-                self.client.drop_collection(collection_name)
+                await asyncio.to_thread(self.client.drop_collection, collection_name)
 
-            if self.client.has_collection(collection_name):
+            has_col = await asyncio.to_thread(self.client.has_collection, collection_name)
+            if has_col:
                 logger.info(f"Collection '{collection_name}' already exists.")
                 return
 
             logger.info(f"Creating collection '{collection_name}' …")
 
-            schema = self.client.create_schema(auto_id=False, enable_dynamic_field=True)
+            schema = await asyncio.to_thread(self.client.create_schema, auto_id=False, enable_dynamic_field=True)
             schema.add_field("id", DataType.VARCHAR, max_length=128, is_primary=True)
             schema.add_field("text", DataType.VARCHAR, max_length=65535, enable_analyzer=True)
             schema.add_field("text_dense", DataType.FLOAT_VECTOR, dim=self.dimension)
@@ -120,7 +123,7 @@ class MilvusService:
                 )
             )
 
-            index_params = self.client.prepare_index_params()
+            index_params = await asyncio.to_thread(self.client.prepare_index_params)
             index_params.add_index(
                 field_name="text_dense",
                 index_name="idx_text_dense",
@@ -135,7 +138,8 @@ class MilvusService:
                 params={"inverted_index_algo": "DAAT_MAXSCORE"},
             )
 
-            self.client.create_collection(
+            await asyncio.to_thread(
+                self.client.create_collection,
                 collection_name=collection_name,
                 schema=schema,
                 index_params=index_params,
@@ -192,7 +196,7 @@ class MilvusService:
             raise
         return result
 
-    def ingest(
+    async def ingest(
         self,
         documents: List[Dict[str, Any]],
         collection_name: str,
@@ -221,7 +225,7 @@ class MilvusService:
             return 0
 
         try:
-            self.setup_collection(collection_name, recreate=recreate)
+            await self.setup_collection(collection_name, recreate=recreate)
 
             chunks = self._prepare_chunks(documents, chunk_size, chunk_overlap)
             if not chunks:
@@ -229,8 +233,10 @@ class MilvusService:
                 return 0
 
             logger.info(f"Encoding {len(chunks)} chunk(s) …")
-            embeddings = self.model.encode(
-                [c["text"] for c in chunks], show_progress_bar=False
+            embeddings = await asyncio.to_thread(
+                self.model.encode,
+                [c["text"] for c in chunks],
+                show_progress_bar=False
             )
             for idx, emb in enumerate(embeddings):
                 chunks[idx]["text_dense"] = emb.tolist()
@@ -238,7 +244,11 @@ class MilvusService:
             inserted = 0
             for batch_start in range(0, len(chunks), _BATCH_SIZE):
                 batch = chunks[batch_start : batch_start + _BATCH_SIZE]
-                self.client.insert(collection_name=collection_name, data=batch)
+                await asyncio.to_thread(
+                    self.client.insert,
+                    collection_name=collection_name,
+                    data=batch
+                )
                 inserted += len(batch)
                 logger.info(
                     f"Batch {batch_start // _BATCH_SIZE + 1}: "
@@ -254,7 +264,7 @@ class MilvusService:
             raise
 
 
-    def search(
+    async def search(
         self,
         query: str,
         collection_name: str,
@@ -278,14 +288,16 @@ class MilvusService:
             Exception: Propagates Milvus SDK or embedding errors.
         """
         try:
-            if not self.client.has_collection(collection_name):
+            has_col = await asyncio.to_thread(self.client.has_collection, collection_name)
+            if not has_col:
                 raise ValueError(f"Collection '{collection_name}' does not exist.")
 
             logger.info(
                 f"Hybrid search on '{collection_name}' | query='{query}' | limit={limit}"
             )
 
-            dense_vector = self.model.encode(query).tolist()
+            dense_vector_raw = await asyncio.to_thread(self.model.encode, query)
+            dense_vector = dense_vector_raw.tolist()
 
             request_dense = AnnSearchRequest(
                 data=[dense_vector],
@@ -300,7 +312,8 @@ class MilvusService:
                 limit=limit,
             )
 
-            raw = self.client.hybrid_search(
+            raw = await asyncio.to_thread(
+                self.client.hybrid_search,
                 collection_name=collection_name,
                 reqs=[request_dense, request_sparse],
                 ranker=RRFRanker(k=60),

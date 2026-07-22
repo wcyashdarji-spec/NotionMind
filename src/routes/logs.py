@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api", tags=["Logs"])
     summary="Tail the application log file",
     response_description="Most recent log lines.",
 )
-def get_logs(
+async def get_logs(
     lines: int = Query(default=100, ge=1, le=1000, description="Number of lines to return."),
 ) -> dict:
     """

@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api", tags=["Search"])
     summary="Hybrid vector search",
     response_description="Ranked list of matching document chunks.",
 )
-def search(request: SearchRequest) -> dict:
+async def search(request: SearchRequest) -> dict:
     """
     Query the vector database using dense semantic and sparse BM25 signals.
 
@@ -40,7 +40,7 @@ def search(request: SearchRequest) -> dict:
 
     try:
         milvus = MilvusService(uri=MILVUS_ENDPOINT, token=MILVUS_TOKEN)
-        results = milvus.search(
+        results = await milvus.search(
             query=request.query,
             collection_name=collection,
             limit=request.limit,

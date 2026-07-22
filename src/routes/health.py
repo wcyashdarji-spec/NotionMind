@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api", tags=["Health"])
     summary="Service health check",
     response_description="Connection status for Notion and Milvus.",
 )
-def health_check() -> dict:
+async def health_check() -> dict:
     """
     Return the configuration status for both Notion and Zilliz Milvus.
 

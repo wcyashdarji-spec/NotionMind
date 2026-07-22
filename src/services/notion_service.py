@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Dict, List, Set, Tuple
 
@@ -34,17 +35,27 @@ class NotionService:
             "Notion-Version": _API_VERSION,
             "Content-Type": "application/json",
         }
-        self._http = httpx.Client(headers=self.headers, timeout=30.0)
+        self._http = httpx.AsyncClient(headers=self.headers, timeout=30.0)
+
+    async def close(self) -> None:
+        """Close the underlying HTTP client."""
+        await self._http.aclose()
+
+    async def __aenter__(self) -> NotionService:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.close()
 
 
-    def _request(self, method: str, url: str, **kwargs: Any) -> Dict[str, Any]:
+    async def _request(self, method: str, url: str, **kwargs: Any) -> Dict[str, Any]:
         """
         Execute an HTTP request with exponential back-off on rate-limit errors.
 
         Args:
             method: HTTP verb (``"GET"``, ``"POST"``, …).
             url: Fully qualified request URL.
-            **kwargs: Extra arguments forwarded to :meth:`httpx.Client.request`.
+            **kwargs: Extra arguments forwarded to :meth:`httpx.AsyncClient.request`.
 
         Returns:
             Parsed JSON response dictionary.
@@ -56,7 +67,7 @@ class NotionService:
         backoff = 1.0
         for attempt in range(1, _MAX_RETRIES + 1):
             try:
-                response = self._http.request(method, url, **kwargs)
+                response = await self._http.request(method, url, **kwargs)
 
                 if response.status_code == 429:
                     retry_after = float(response.headers.get("Retry-After", backoff))
@@ -64,7 +75,7 @@ class NotionService:
                         f"Rate-limited (429). Retrying in {retry_after}s "
                         f"(attempt {attempt}/{_MAX_RETRIES})."
                     )
-                    time.sleep(retry_after)
+                    await asyncio.sleep(retry_after)
                     backoff *= 2
                     continue
 
@@ -73,7 +84,7 @@ class NotionService:
 
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 429:
-                    time.sleep(backoff)
+                    await asyncio.sleep(backoff)
                     backoff *= 2
                     continue
                 if exc.response.status_code not in (400, 404):
@@ -86,13 +97,13 @@ class NotionService:
                 logger.error(f"Notion API network error: {exc}")
                 if attempt == _MAX_RETRIES:
                     raise
-                time.sleep(backoff)
+                await asyncio.sleep(backoff)
                 backoff *= 2
 
         raise httpx.RequestError(f"Notion API: max retries ({_MAX_RETRIES}) exceeded.")
 
 
-    def get_page(self, page_id: str) -> Dict[str, Any]:
+    async def get_page(self, page_id: str) -> Dict[str, Any]:
         """
         Retrieve metadata for a single Notion page.
 
@@ -106,13 +117,13 @@ class NotionService:
             httpx.HTTPStatusError: On API errors.
         """
         try:
-            return self._request("GET", f"{_API_BASE}/pages/{page_id}")
+            return await self._request("GET", f"{_API_BASE}/pages/{page_id}")
         except Exception as exc:
             logger.error(f"get_page({page_id}) failed: {exc}")
             raise
 
 
-    def get_database(self, database_id: str) -> Dict[str, Any]:
+    async def get_database(self, database_id: str) -> Dict[str, Any]:
         """
         Retrieve metadata for a Notion database.
 
@@ -126,13 +137,13 @@ class NotionService:
             httpx.HTTPStatusError: On API errors.
         """
         try:
-            return self._request("GET", f"{_API_BASE}/databases/{database_id}")
+            return await self._request("GET", f"{_API_BASE}/databases/{database_id}")
         except Exception as exc:
             logger.error(f"get_database({database_id}) failed: {exc}")
             raise
 
 
-    def query_database(self, database_id: str) -> List[Dict[str, Any]]:
+    async def query_database(self, database_id: str) -> List[Dict[str, Any]]:
         """
         Return all page entries belonging to a database, handling pagination.
 
@@ -155,7 +166,7 @@ class NotionService:
                 if start_cursor:
                     payload["start_cursor"] = start_cursor
 
-                data = self._request("POST", url, json=payload)
+                data = await self._request("POST", url, json=payload)
                 results.extend(data.get("results", []))
 
                 if not data.get("has_more"):
@@ -169,7 +180,7 @@ class NotionService:
         return results
 
 
-    def get_block_children(self, block_id: str) -> List[Dict[str, Any]]:
+    async def get_block_children(self, block_id: str) -> List[Dict[str, Any]]:
         """
         Return all children of a block, handling pagination.
 
@@ -192,7 +203,7 @@ class NotionService:
                 if start_cursor:
                     params["start_cursor"] = start_cursor
 
-                data = self._request("GET", url, params=params)
+                data = await self._request("GET", url, params=params)
                 results.extend(data.get("results", []))
 
                 if not data.get("has_more"):
@@ -206,7 +217,7 @@ class NotionService:
         return results
 
 
-    def search_workspace(self, query: str = "") -> List[Dict[str, Any]]:
+    async def search_workspace(self, query: str = "") -> List[Dict[str, Any]]:
         """
         Search the workspace for pages the integration can access.
 
@@ -234,7 +245,7 @@ class NotionService:
                 if start_cursor:
                     payload["start_cursor"] = start_cursor
 
-                data = self._request("POST", url, json=payload)
+                data = await self._request("POST", url, json=payload)
                 results.extend(data.get("results", []))
 
                 if not data.get("has_more"):
@@ -285,7 +296,7 @@ class NotionService:
             return "Untitled Page"
 
 
-    def _block_to_markdown(
+    async def _block_to_markdown(
         self,
         block: Dict[str, Any],
         indent: int = 0,
@@ -350,8 +361,8 @@ class NotionService:
                 markdown = f"{pad}*[Sub-database: {title}]*\n\n"
 
             if has_children and block_type not in ("child_page", "child_database"):
-                for child in self.get_block_children(block_id):
-                    child_md, sub_pages, sub_dbs = self._block_to_markdown(child, indent + 1)
+                for child in await self.get_block_children(block_id):
+                    child_md, sub_pages, sub_dbs = await self._block_to_markdown(child, indent + 1)
                     markdown += child_md
                     child_pages.extend(sub_pages)
                     child_databases.extend(sub_dbs)
@@ -362,7 +373,7 @@ class NotionService:
         return markdown, child_pages, child_databases
 
 
-    def fetch_page_as_document(
+    async def fetch_page_as_document(
         self, page_id: str
     ) -> Tuple[str, str, List[str], List[str], str]:
         """
@@ -384,18 +395,18 @@ class NotionService:
         """
         try:
             logger.info(f"Fetching page {page_id} …")
-            page_data = self.get_page(page_id)
+            page_data = await self.get_page(page_id)
             title = self.get_page_title(page_data)
             url = page_data.get("url") or f"https://notion.so/{page_id.replace('-', '')}"
             logger.info(f"  → '{title}'")
 
-            blocks = self.get_block_children(page_id)
+            blocks = await self.get_block_children(page_id)
             lines = [f"# {title}\n\n"]
             all_child_pages: List[str] = []
             all_child_dbs: List[str] = []
 
             for block in blocks:
-                md, cp, cd = self._block_to_markdown(block)
+                md, cp, cd = await self._block_to_markdown(block)
                 lines.append(md)
                 all_child_pages.extend(cp)
                 all_child_dbs.extend(cd)
@@ -407,7 +418,7 @@ class NotionService:
             raise
 
 
-    def crawl(
+    async def crawl(
         self,
         root_id: str,
         visited: Set[str] | None = None,
@@ -438,13 +449,13 @@ class NotionService:
 
         is_database = False
         try:
-            self.get_page(root_id)
+            await self.get_page(root_id)
             logger.info(f"{root_id} detected as PAGE")
 
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 try:
-                    db_meta = self.get_database(root_id)
+                    db_meta = await self.get_database(root_id)
                     is_database = True
 
                     db_title = self.extract_rich_text(db_meta.get("title", []))
@@ -458,30 +469,30 @@ class NotionService:
 
         if is_database:
             try:
-                entries = self.query_database(root_id)
+                entries = await self.query_database(root_id)
                 logger.info(f"Database {root_id}: found {len(entries)} entries.")
                 for entry in entries:
-                    documents.extend(self.crawl(entry["id"], visited))
+                    documents.extend(await self.crawl(entry["id"], visited))
             except Exception as exc:
                 logger.error(f"crawl – database traversal failed for {root_id}: {exc}")
 
         else:
             try:
-                title, content, child_pages, child_dbs, url = self.fetch_page_as_document(root_id)
+                title, content, child_pages, child_dbs, url = await self.fetch_page_as_document(root_id)
                 documents.append(
                     {"page_id": root_id, "title": title, "content": content, "url": url}
                 )
                 for pid in child_pages:
-                    documents.extend(self.crawl(pid, visited))
+                    documents.extend(await self.crawl(pid, visited))
                 for did in child_dbs:
-                    documents.extend(self.crawl(did, visited))
+                    documents.extend(await self.crawl(did, visited))
 
             except Exception as exc:
                 logger.error(f"crawl – page traversal failed for {root_id}: {exc}")
 
         return documents
 
-    def fetch_workspace(self) -> List[Dict[str, Any]]:
+    async def fetch_workspace(self) -> List[Dict[str, Any]]:
         """
         Discover and crawl all root-level pages shared with the integration.
 
@@ -495,7 +506,7 @@ class NotionService:
         """
         try:
             logger.info("Scanning workspace for shared root pages …")
-            search_results = self.search_workspace()
+            search_results = await self.search_workspace()
             found_ids = {item["id"] for item in search_results}
 
             root_ids: List[str] = []
@@ -514,7 +525,7 @@ class NotionService:
             visited: Set[str] = set()
             documents: List[Dict[str, Any]] = []
             for entity_id in root_ids:
-                documents.extend(self.crawl(entity_id, visited))
+                documents.extend(await self.crawl(entity_id, visited))
 
             return documents
 

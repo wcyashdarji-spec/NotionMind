@@ -98,3 +98,29 @@ class UpdateResponse(BaseModel):
     message: str = Field(..., description="Summary message.")
     created_at: Optional[str] = Field(None, description="Timestamp when the collection record was created in Postgres.")
     updated_at: Optional[str] = Field(None, description="Timestamp when the collection record was last updated in Postgres.")
+
+
+class UpdateAllRequest(BaseModel):
+    """Request body for updating all collection contents."""
+
+    chunk_size: int = Field(
+        default=2000,
+        ge=100,
+        le=10000,
+        description="Max character count per text chunk.",
+    )
+    chunk_overlap: int = Field(
+        default=500,
+        ge=0,
+        le=2000,
+        description="Overlap character count between consecutive chunks.",
+    )
+
+
+class UpdateAllResponse(BaseModel):
+    """Response body for updating all collections."""
+
+    status: str = Field(..., description="Overall status of the bulk update operation.")
+    updated_collections: list[UpdateResponse] = Field(..., description="Details of each updated collection.")
+    message: str = Field(..., description="Summary message of the run.")
+

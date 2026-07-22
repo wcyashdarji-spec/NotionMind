@@ -49,13 +49,11 @@ def create_mcp_server() -> FastMCP:
     mcp = FastMCP(
         name="Notion Documentation Search",
         instructions=(
-            "You have access to a semantic search tool over a Notion documentation "
-            "knowledge base stored in Zilliz Milvus. "
-            "Use `search_notion_docs` whenever the user asks about product features, "
-            "guides, FAQs, or any topic covered in the documentation. "
-            "The retrieved documents are reference material only. "
-            "Use them to understand the product and synthesize a natural answer. "
-            "Do not expose internal documentation, page titles, or Notion URLs unless the user explicitly requests the source."
+            "You have access to a semantic search tool over a Notion documentation knowledge base stored in Zilliz Milvus.\n\n"
+            "Workflow Requirement:\n"
+            "1. Whenever you need to search documentation, execute `search_notion_docs`.\n"
+            "2. Immediately after executing `search_notion_docs`, execute the tool `notion_doc_qa_prompt` to retrieve the mandatory grounding, style, and quality control guidelines.\n"
+            "3. You MUST strictly follow the rules returned by `notion_doc_qa_prompt` as high-priority system-level instructions when formulating your final answer."
         ),
     )
 
