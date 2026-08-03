@@ -4,13 +4,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.config import (
-    MILVUS_COLLECTION_NAME,
-    MILVUS_ENDPOINT,
-    MILVUS_TOKEN,
+    CHROMA_COLLECTION_NAME,
+    CHROMA_DB_PATH,
     NOTION_TOKEN,
     logger,
 )
-from src.services.milvus_service import MilvusService
+from src.services.chroma_service import ChromaService
 from src.services.notion_service import NotionService
 from src.database import get_db, list_ingestion_records, upsert_ingestion_record, IngestionRecord
 from src.utils.schemas import IngestRequest, IngestResponse, UpdateRequest, UpdateResponse, UpdateAllRequest, UpdateAllResponse
@@ -47,16 +46,12 @@ async def ingest(request: IngestRequest, db: Session = Depends(get_db)) -> Inges
         logger.error("Ingestion aborted: NOTION_TOKEN is not configured.")
         raise HTTPException(status_code=400, detail="NOTION_TOKEN is not configured.")
 
-    if not MILVUS_ENDPOINT or not MILVUS_TOKEN:
-        logger.error("Ingestion aborted: Milvus credentials are not configured.")
-        raise HTTPException(status_code=400, detail="Milvus credentials are not configured.")
-
-    collection = request.collection_name or MILVUS_COLLECTION_NAME
+    collection = request.collection_name or CHROMA_COLLECTION_NAME
     logger.info(f"Ingestion started – collection='{collection}', recreate={request.recreate}.")
 
     try:
         async with NotionService(token=NOTION_TOKEN) as notion:
-            milvus = MilvusService(uri=MILVUS_ENDPOINT, token=MILVUS_TOKEN)
+            chroma = ChromaService(db_path=CHROMA_DB_PATH)
 
             if request.root_id:
                 logger.info(f"Crawling from root_id={request.root_id} …")
@@ -67,7 +62,7 @@ async def ingest(request: IngestRequest, db: Session = Depends(get_db)) -> Inges
 
             logger.info(f"Crawl complete – {len(documents)} page(s) discovered.")
 
-            total_chunks = await milvus.ingest(
+            total_chunks = await chroma.ingest(
                 documents=documents,
                 collection_name=collection,
                 recreate=request.recreate,
@@ -124,11 +119,7 @@ async def update_collection(request: UpdateRequest, db: Session = Depends(get_db
         logger.error("Collection update aborted: NOTION_TOKEN is not configured.")
         raise HTTPException(status_code=400, detail="NOTION_TOKEN is not configured.")
 
-    if not MILVUS_ENDPOINT or not MILVUS_TOKEN:
-        logger.error("Collection update aborted: Milvus credentials are not configured.")
-        raise HTTPException(status_code=400, detail="Milvus credentials are not configured.")
-
-    collection = request.collection_name or MILVUS_COLLECTION_NAME
+    collection = request.collection_name or CHROMA_COLLECTION_NAME
     logger.info(
         f"Collection update started – collection='{collection}', root_id={request.root_id}, "
         f"chunk_size={request.chunk_size}, chunk_overlap={request.chunk_overlap}."
@@ -136,7 +127,7 @@ async def update_collection(request: UpdateRequest, db: Session = Depends(get_db
 
     try:
         async with NotionService(token=NOTION_TOKEN) as notion:
-            milvus = MilvusService(uri=MILVUS_ENDPOINT, token=MILVUS_TOKEN)
+            chroma = ChromaService(db_path=CHROMA_DB_PATH)
 
             if request.root_id:
                 logger.info(f"Crawling root_id={request.root_id} for collection update …")
@@ -147,7 +138,7 @@ async def update_collection(request: UpdateRequest, db: Session = Depends(get_db
 
             logger.info(f"Crawl complete – {len(documents)} page(s) discovered for update.")
 
-            total_chunks = await milvus.ingest(
+            total_chunks = await chroma.ingest(
                 documents=documents,
                 collection_name=collection,
                 recreate=True,
@@ -226,9 +217,7 @@ async def update_all_collections(request: UpdateAllRequest, db: Session = Depend
         logger.error("Bulk update aborted: NOTION_TOKEN is not configured.")
         raise HTTPException(status_code=400, detail="NOTION_TOKEN is not configured.")
 
-    if not MILVUS_ENDPOINT or not MILVUS_TOKEN:
-        logger.error("Bulk update aborted: Milvus credentials are not configured.")
-        raise HTTPException(status_code=400, detail="Milvus credentials are not configured.")
+
 
     try:
         records = db.query(IngestionRecord).all()
@@ -250,86 +239,86 @@ async def update_all_collections(request: UpdateAllRequest, db: Session = Depend
     has_success = False
 
     async with NotionService(token=NOTION_TOKEN) as notion:
-        milvus = MilvusService(uri=MILVUS_ENDPOINT, token=MILVUS_TOKEN)
+        chroma = ChromaService(db_path=CHROMA_DB_PATH)
 
         for record in records:
             collection = record.collection_name
             root_id = record.root_id
             logger.info(f"Processing update for collection '{collection}' (root_id: {root_id}).")
 
-        try:
-            if root_id:
-                logger.info(f"Crawling root_id={root_id} for collection '{collection}' update …")
-                documents = await notion.crawl(root_id)
-            else:
-                logger.info(f"No root_id for collection '{collection}' – crawling entire workspace …")
-                documents = await notion.fetch_workspace()
-
-            logger.info(f"Crawl complete for '{collection}' – {len(documents)} page(s) discovered.")
-
-            total_chunks = await milvus.ingest(
-                documents=documents,
-                collection_name=collection,
-                recreate=True,
-                chunk_size=request.chunk_size,
-                chunk_overlap=request.chunk_overlap,
-                )
-
-            db_record = upsert_ingestion_record(
-                db=db,
-                collection_name=collection,
-                root_id=root_id,
-                pages_ingested=len(documents),
-                vector_chunks_created=total_chunks,
-                status="success",
-            )
-
-            updated_list.append(
-                UpdateResponse(
-                    status="success",
-                    root_id=db_record.root_id,
-                    pages_ingested=db_record.pages_ingested,
-                    vector_chunks_created=db_record.vector_chunks_created,
-                    collection_name=db_record.collection_name,
-                    message=f"Successfully updated collection '{collection}' with {len(documents)} page(s) and {total_chunks} chunk(s).",
-                    created_at=db_record.created_at.isoformat() if db_record.created_at else None,
-                    updated_at=db_record.updated_at.isoformat() if db_record.updated_at else None,
-                )
-            )
-            has_success = True
-
-        except Exception as exc:
-            logger.exception(f"Collection update failed for '{collection}': {exc}")
-            has_failure = True
-
             try:
+                if root_id:
+                    logger.info(f"Crawling root_id={root_id} for collection '{collection}' update …")
+                    documents = await notion.crawl(root_id)
+                else:
+                    logger.info(f"No root_id for collection '{collection}' – crawling entire workspace …")
+                    documents = await notion.fetch_workspace()
+
+                logger.info(f"Crawl complete for '{collection}' – {len(documents)} page(s) discovered.")
+
+                total_chunks = await chroma.ingest(
+                    documents=documents,
+                    collection_name=collection,
+                    recreate=True,
+                    chunk_size=request.chunk_size,
+                    chunk_overlap=request.chunk_overlap,
+                )
+
                 db_record = upsert_ingestion_record(
                     db=db,
                     collection_name=collection,
                     root_id=root_id,
-                    pages_ingested=record.pages_ingested or 0,
-                    vector_chunks_created=record.vector_chunks_created or 0,
-                    status="failed",
+                    pages_ingested=len(documents),
+                    vector_chunks_created=total_chunks,
+                    status="success",
                 )
-                created_at_str = db_record.created_at.isoformat() if db_record.created_at else None
-                updated_at_str = db_record.updated_at.isoformat() if db_record.updated_at else None
-            except Exception as db_exc:
-                logger.error(f"Failed to update failed status in database for '{collection}': {db_exc}")
-                created_at_str = record.created_at.isoformat() if getattr(record, "created_at", None) else None
-                updated_at_str = record.updated_at.isoformat() if getattr(record, "updated_at", None) else None
 
-            updated_list.append(
-                UpdateResponse(
-                    status="failed",
-                    root_id=root_id,
-                    pages_ingested=0,
-                    vector_chunks_created=0,
-                    collection_name=collection,
-                    message=f"Update failed: {exc}",
-                    created_at=created_at_str,
-                    updated_at=updated_at_str,
+                updated_list.append(
+                    UpdateResponse(
+                        status="success",
+                        root_id=db_record.root_id,
+                        pages_ingested=db_record.pages_ingested,
+                        vector_chunks_created=db_record.vector_chunks_created,
+                        collection_name=db_record.collection_name,
+                        message=f"Successfully updated collection '{collection}' with {len(documents)} page(s) and {total_chunks} chunk(s).",
+                        created_at=db_record.created_at.isoformat() if db_record.created_at else None,
+                        updated_at=db_record.updated_at.isoformat() if db_record.updated_at else None,
+                    )
                 )
-            )
+                has_success = True
+
+            except Exception as exc:
+                logger.exception(f"Collection update failed for '{collection}': {exc}")
+                has_failure = True
+
+                try:
+                    db_record = upsert_ingestion_record(
+                        db=db,
+                        collection_name=collection,
+                        root_id=root_id,
+                        pages_ingested=record.pages_ingested or 0,
+                        vector_chunks_created=record.vector_chunks_created or 0,
+                        status="failed",
+                    )
+                    created_at_str = db_record.created_at.isoformat() if db_record.created_at else None
+                    updated_at_str = db_record.updated_at.isoformat() if db_record.updated_at else None
+                except Exception as db_exc:
+                    logger.error(f"Failed to update failed status in database for '{collection}': {db_exc}")
+                    created_at_str = record.created_at.isoformat() if getattr(record, "created_at", None) else None
+                    updated_at_str = record.updated_at.isoformat() if getattr(record, "updated_at", None) else None
+
+                updated_list.append(
+                    UpdateResponse(
+                        status="failed",
+                        root_id=root_id,
+                        pages_ingested=0,
+                        vector_chunks_created=0,
+                        collection_name=collection,
+                        message=f"Update failed: {exc}",
+                        created_at=created_at_str,
+                        updated_at=updated_at_str,
+                    )
+                )
 
     if has_success and has_failure:
         overall_status = "partial_failure"

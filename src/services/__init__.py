@@ -1,1 +1,2 @@
-"""Service layer: Notion client, Milvus manager."""
+"""Service layer: Notion client, ChromaDB manager."""
+

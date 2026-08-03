@@ -8,38 +8,30 @@ sys.path.append(str(Path(__file__).parent.parent.resolve()))
 from fastmcp import FastMCP
 from fastapi.responses import PlainTextResponse
 
-from src.services.milvus_service import MilvusService
-from src.config import MILVUS_ENDPOINT, MILVUS_TOKEN, logger
+from src.services.chroma_service import ChromaService
+from src.config import CHROMA_DB_PATH, logger
 
 MCP_HOST: str = "0.0.0.0"
 MCP_PORT: int = 8001
 MCP_PATH: str = "/mcp"
 
-_milvus_service: MilvusService | None = None
+_chroma_service: ChromaService | None = None
 
 
-def get_milvus_service() -> MilvusService:
+def get_chroma_service() -> ChromaService:
     """
-    Return the shared :class:`~src.services.milvus_service.MilvusService`
+    Return the shared :class:`~src.services.chroma_service.ChromaService`
     instance, creating it on the first call.
 
     Returns:
-        A connected and ready :class:`MilvusService`.
-
-    Raises:
-        RuntimeError: When ``MILVUS_ENDPOINT`` or ``MILVUS_TOKEN`` are not set.
+        A connected and ready :class:`ChromaService`.
     """
-    global _milvus_service
-    if _milvus_service is None:
-        if not MILVUS_ENDPOINT or not MILVUS_TOKEN:
-            raise RuntimeError(
-                "MILVUS_ENDPOINT and MILVUS_TOKEN must be set in the environment "
-                "before the MCP server can serve search requests."
-            )
-        logger.info("[MCP] Initialising MilvusService …")
-        _milvus_service = MilvusService(uri=MILVUS_ENDPOINT, token=MILVUS_TOKEN)
-        logger.info("[MCP] MilvusService ready.")
-    return _milvus_service
+    global _chroma_service
+    if _chroma_service is None:
+        logger.info("[MCP] Initialising ChromaService …")
+        _chroma_service = ChromaService(db_path=CHROMA_DB_PATH)
+        logger.info("[MCP] ChromaService ready.")
+    return _chroma_service
 
 
 def create_mcp_server() -> FastMCP:
@@ -49,11 +41,12 @@ def create_mcp_server() -> FastMCP:
     mcp = FastMCP(
         name="Notion Documentation Search",
         instructions=(
-            "You have access to a semantic search tool over a Notion documentation knowledge base stored in Zilliz Milvus.\n\n"
-            "Workflow Requirement:\n"
-            "1. Whenever you need to search documentation, execute `search_notion_docs`.\n"
-            "2. Immediately after executing `search_notion_docs`, execute the tool `notion_doc_qa_prompt` to retrieve the mandatory grounding, style, and quality control guidelines.\n"
-            "3. You MUST strictly follow the rules returned by `notion_doc_qa_prompt` as high-priority system-level instructions when formulating your final answer."
+            "You have access to a semantic search tool over a Notion documentation knowledge base stored in local ChromaDB.\n\n"
+            "Use `search_notion_docs` whenever the user asks about product features, "
+            "guides, FAQs, or any topic covered in the documentation. "
+            "The retrieved documents are reference material only. "
+            "Use them to understand the product and synthesize a natural answer. "
+            "Do not expose internal documentation, page titles, or Notion URLs unless the user explicitly requests the source."
         ),
     )
 

@@ -12,6 +12,10 @@ MILVUS_ENDPOINT: str | None = os.getenv("MILVUS_ENDPOINT")
 MILVUS_TOKEN: str | None = os.getenv("MILVUS_TOKEN")
 MILVUS_COLLECTION_NAME: str = os.getenv("MILVUS_COLLECTION_NAME", "notion_documentation")
 
+CHROMA_DB_PATH: str = os.getenv("CHROMA_DB_PATH", "./chroma_db")
+CHROMA_COLLECTION_NAME: str = os.getenv("CHROMA_COLLECTION_NAME", "notion_documentation")
+
+
 EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
 JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY")

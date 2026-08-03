@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from src.utils.schemas import SearchRequest
-from src.services.milvus_service import MilvusService
-from src.config import MILVUS_COLLECTION_NAME, MILVUS_ENDPOINT, MILVUS_TOKEN, logger
+from src.services.chroma_service import ChromaService
+from src.config import CHROMA_COLLECTION_NAME, CHROMA_DB_PATH, logger
 
 router = APIRouter(prefix="/api", tags=["Search"])
 
@@ -32,15 +32,11 @@ async def search(request: SearchRequest) -> dict:
         HTTPException 400: When Milvus credentials are not configured.
         HTTPException 500: On any unexpected search error.
     """
-    if not MILVUS_ENDPOINT or not MILVUS_TOKEN:
-        logger.error("Search aborted: Milvus credentials are not configured.")
-        raise HTTPException(status_code=400, detail="Milvus credentials are not configured.")
-
-    collection = request.collection_name or MILVUS_COLLECTION_NAME
+    collection = request.collection_name or CHROMA_COLLECTION_NAME
 
     try:
-        milvus = MilvusService(uri=MILVUS_ENDPOINT, token=MILVUS_TOKEN)
-        results = await milvus.search(
+        chroma = ChromaService(db_path=CHROMA_DB_PATH)
+        results = await chroma.search(
             query=request.query,
             collection_name=collection,
             limit=request.limit,

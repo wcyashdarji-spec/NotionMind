@@ -24,7 +24,7 @@ class IngestRequest(BaseModel):
     )
     collection_name: Optional[str] = Field(
         default=None,
-        description="Target Milvus collection name. Falls back to MILVUS_COLLECTION_NAME env var.",
+        description="Target Chroma collection name. Falls back to CHROMA_COLLECTION_NAME env var.",
     )
     recreate: bool = Field(
         default=False,
@@ -38,7 +38,7 @@ class SearchRequest(BaseModel):
     query: str = Field(..., description="Natural-language query string.")
     collection_name: Optional[str] = Field(
         default=None,
-        description="Milvus collection to search. Falls back to MILVUS_COLLECTION_NAME env var.",
+        description="Chroma collection to search. Falls back to CHROMA_COLLECTION_NAME env var.",
     )
     limit: int = Field(
         default=5,
@@ -59,7 +59,7 @@ class UpdateRequest(BaseModel):
     )
     collection_name: Optional[str] = Field(
         default=None,
-        description="Target Milvus collection name. Falls back to MILVUS_COLLECTION_NAME env var.",
+        description="Target Chroma collection name. Falls back to CHROMA_COLLECTION_NAME env var.",
     )
     chunk_size: int = Field(
         default=2000,
