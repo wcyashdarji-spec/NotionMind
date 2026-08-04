@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from src.config import logger
 from src.database import init_db
-from src.routes import agent, health, ingest, logs, search
+from src.routes import agent, auth, health, ingest, logs, search
 
 app = FastAPI(
     title="Notion → Zilliz Milvus Ingestion Service",
@@ -16,6 +16,7 @@ app = FastAPI(
 )
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(ingest.router)
 app.include_router(search.router)
 app.include_router(logs.router)

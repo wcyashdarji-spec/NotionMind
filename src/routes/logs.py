@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from src.config import LOG_FILE_PATH, logger
+from src.utils.deps import get_current_token
 
 router = APIRouter(prefix="/api", tags=["Logs"])
 
@@ -14,6 +15,7 @@ router = APIRouter(prefix="/api", tags=["Logs"])
 )
 async def get_logs(
     lines: int = Query(default=100, ge=1, le=1000, description="Number of lines to return."),
+    _token: dict = Depends(get_current_token),
 ) -> dict:
     """
     Return the most recent log entries from ``logs/app.log``.

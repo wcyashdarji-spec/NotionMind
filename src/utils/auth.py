@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import datetime
+import uuid
 from typing import Any, List, Union
 import jwt
 
-from src.config import JWT_ALGORITHM, JWT_SECRET_KEY, logger
+from src.config import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES, JWT_SECRET_KEY, logger
+
+_USER_TOKEN_EXPIRE_MINUTES: int = JWT_ACCESS_TOKEN_EXPIRE_MINUTES
 
 
 def generate_access_token(
@@ -127,3 +130,75 @@ def verify_collection_access(
         f"Access denied: Token scope does not grant access to collection '{collection_name}'. "
         f"Token collections: {allowed_collections}",
     )
+
+
+def create_user_token(
+    user_id: int,
+    email: str,
+    expires_minutes: int = _USER_TOKEN_EXPIRE_MINUTES,
+    secret_key: str = JWT_SECRET_KEY,
+    algorithm: str = JWT_ALGORITHM,
+) -> tuple[str, str, datetime.datetime]:
+    """
+    Generate a signed JWT for an authenticated user session.
+
+    The token payload includes:
+    - ``sub``  – user ID (as string) for :func:`get_user_by_id` lookup
+    - ``email``– user e-mail address
+    - ``jti``  – unique token identifier (UUID4) used for logout blacklisting
+    - ``iat``  – issued-at timestamp
+    - ``exp``  – expiry timestamp
+
+    Args:
+        user_id: Database primary key of the authenticated user.
+        email: User's e-mail address (informational claim).
+        expires_minutes: Token lifetime in minutes (default 60).
+        secret_key: JWT signing secret.
+        algorithm: Signing algorithm.
+
+    Returns:
+        A 3-tuple of ``(encoded_token, jti, expires_at_datetime)``.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+    expires_at = now + datetime.timedelta(minutes=expires_minutes)
+    jti = str(uuid.uuid4())
+
+    payload = {
+        "sub": str(user_id),
+        "email": email,
+        "jti": jti,
+        "iat": int(now.timestamp()),
+        "exp": int(expires_at.timestamp()),
+    }
+
+    token = jwt.encode(payload, secret_key, algorithm=algorithm)
+    logger.info(f"User session token created – user_id={user_id}, jti={jti}")
+    return token, jti, expires_at
+
+
+def decode_user_token(
+    token: str,
+    secret_key: str = JWT_SECRET_KEY,
+    algorithm: str = JWT_ALGORITHM,
+) -> dict[str, Any]:
+    """
+    Decode and verify a user session JWT.
+
+    Strips an optional ``Bearer `` prefix before decoding.
+
+    Args:
+        token: Raw or ``"Bearer "``-prefixed JWT string.
+        secret_key: Secret key for signature verification.
+        algorithm: Signing algorithm.
+
+    Returns:
+        Decoded payload dictionary (contains ``sub``, ``email``, ``jti``, ``exp``).
+
+    Raises:
+        jwt.ExpiredSignatureError: If the token has expired.
+        jwt.InvalidTokenError: If the token is malformed or the signature is invalid.
+    """
+    token_str = token.strip()
+    if token_str.lower().startswith("bearer "):
+        token_str = token_str[7:].strip()
+    return jwt.decode(token_str, secret_key, algorithms=[algorithm])

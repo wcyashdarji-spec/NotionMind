@@ -9,6 +9,7 @@ from src.config import (
     NOTION_TOKEN,
     logger,
 )
+from src.utils.deps import get_current_token
 from src.services.chroma_service import ChromaService
 from src.services.notion_service import NotionService
 from src.database import get_db, list_ingestion_records, upsert_ingestion_record, IngestionRecord
@@ -23,7 +24,11 @@ router = APIRouter(prefix="/api", tags=["Ingestion"])
     response_model=IngestResponse,
     response_description="Summary of the ingestion run and database record.",
 )
-async def ingest(request: IngestRequest, db: Session = Depends(get_db)) -> IngestResponse:
+async def ingest(
+    request: IngestRequest,
+    db: Session = Depends(get_db),
+    _token: dict = Depends(get_current_token),
+) -> IngestResponse:
     """
     Crawl Notion pages and insert them as vector chunks into Milvus,
     saving or updating the metadata entry in PostgreSQL.
@@ -98,7 +103,11 @@ async def ingest(request: IngestRequest, db: Session = Depends(get_db)) -> Inges
     response_model=UpdateResponse,
     response_description="Summary of the collection content update run and database record.",
 )
-async def update_collection(request: UpdateRequest, db: Session = Depends(get_db)) -> UpdateResponse:
+async def update_collection(
+    request: UpdateRequest,
+    db: Session = Depends(get_db),
+    _token: dict = Depends(get_current_token),
+) -> UpdateResponse:
     """
     Update collection content by re-crawling Notion and replacing collection data.
 
@@ -176,7 +185,10 @@ async def update_collection(request: UpdateRequest, db: Session = Depends(get_db
     summary="Get all database ingestion records",
     response_description="List of ingestion metadata records stored in PostgreSQL.",
 )
-async def get_records(db: Session = Depends(get_db)) -> list[dict]:
+async def get_records(
+    db: Session = Depends(get_db),
+    _token: dict = Depends(get_current_token),
+) -> list[dict]:
     """Retrieve all database ingestion records tracked in PostgreSQL."""
     records = list_ingestion_records(db)
     return [rec.to_dict() for rec in records]
@@ -188,7 +200,11 @@ async def get_records(db: Session = Depends(get_db)) -> list[dict]:
     response_model=UpdateAllResponse,
     response_description="Summary of the bulk update run across all collections.",
 )
-async def update_all_collections(request: UpdateAllRequest, db: Session = Depends(get_db)) -> UpdateAllResponse:
+async def update_all_collections(
+    request: UpdateAllRequest,
+    db: Session = Depends(get_db),
+    _token: dict = Depends(get_current_token),
+) -> UpdateAllResponse:
     """
     Update all registered Notion collections.
 

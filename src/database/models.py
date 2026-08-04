@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from sqlalchemy import Column, DateTime, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, Integer, String
 
 from src.database.connection import Base
 
@@ -45,3 +45,51 @@ class IngestionRecord(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
+
+
+class User(Base):
+    """
+    SQLAlchemy model representing an authenticated user account.
+    Stores email, bcrypt-hashed password, and account status.
+    """
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    hashed_password = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+    def to_dict(self) -> dict:
+        """Convert ORM model instance to a safe dictionary (no password)."""
+        return {
+            "id": self.id,
+            "email": self.email,
+            "is_active": self.is_active,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class RevokedToken(Base):
+    """
+    JWT token blacklist for logout support.
+    Each revoked token's `jti` claim is stored here. The `get_current_token`
+    dependency checks this table and returns 401 for any blacklisted jti.
+    Rows whose `expires_at` has passed can be pruned safely.
+    """
+
+    __tablename__ = "revoked_tokens"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    jti = Column(String(64), nullable=False, unique=True, index=True)
+    revoked_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from src.utils.schemas import SearchRequest
 from src.services.chroma_service import ChromaService
 from src.config import CHROMA_COLLECTION_NAME, CHROMA_DB_PATH, logger
+from src.utils.deps import get_current_token
 
 router = APIRouter(prefix="/api", tags=["Search"])
 
@@ -14,7 +15,10 @@ router = APIRouter(prefix="/api", tags=["Search"])
     summary="Hybrid vector search",
     response_description="Ranked list of matching document chunks.",
 )
-async def search(request: SearchRequest) -> dict:
+async def search(
+    request: SearchRequest,
+    _token: dict = Depends(get_current_token),
+) -> dict:
     """
     Query the vector database using dense semantic and sparse BM25 signals.
 

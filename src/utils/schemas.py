@@ -1,5 +1,34 @@
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
+
+
+class RegisterRequest(BaseModel):
+    """Request body for user registration."""
+    email: EmailStr = Field(..., description="A valid e-mail address for the new account.")
+    password: str = Field(..., min_length=8, description="Password (minimum 8 characters).")
+
+
+class LoginRequest(BaseModel):
+    """Request body for user login."""
+    email: EmailStr = Field(..., description="Registered e-mail address.")
+    password: str = Field(..., description="Account password.")
+
+
+class TokenResponse(BaseModel):
+    """Response body returned after a successful login."""
+    access_token: str = Field(..., description="Signed JWT Bearer token.")
+    token_type: str = Field(default="bearer", description="Token type (always 'bearer').")
+    expires_in: int = Field(..., description="Token lifetime in seconds.")
+
+
+class UserResponse(BaseModel):
+    """Public user profile returned by /auth/me."""
+    id: int
+    email: str
+    is_active: bool
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
 
 class ChatRequest(BaseModel):
     """Request body for the agent chat endpoint."""

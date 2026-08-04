@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from src.config import logger
+from src.utils.deps import get_current_token
 from src.services.agent_service import ask_agent
 from src.utils.schemas import ChatRequest, ChatResponse
 
@@ -15,7 +16,10 @@ router = APIRouter(prefix="/api/agent", tags=["Agent"])
     summary="Query the Pydantic AI Notion Agent",
     response_description="The response from the agent powered by Google Gemini, using Notion documentation tools.",
 )
-async def chat(request: ChatRequest) -> ChatResponse:
+async def chat(
+    request: ChatRequest,
+    _token: dict = Depends(get_current_token),
+) -> ChatResponse:
     """
     Handle a chat request and return the AI-generated response.
 
@@ -39,7 +43,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         combined_prompt = f"App/Attribute: {request.attribute}\nUser Query: {request.prompt}"
 
         logger.info(f"Sending combined prompt to agent: {combined_prompt}")
-        response_text = await ask_agent(combined_prompt)
+        response_text = await ask_agent(combined_prompt, attribute=request.attribute)
 
         return ChatResponse(
             prompt=request.prompt,

@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from src.config import logger
-from src.database.models import IngestionRecord, utc_now
+from src.database.models import IngestionRecord, RevokedToken, User, utc_now
 
 
 def upsert_ingestion_record(
@@ -124,3 +124,105 @@ def list_ingestion_records(
         .limit(limit)
         .all()
     )
+
+
+def create_user(db: Session, email: str, hashed_password: str) -> User:
+    """
+    Persist a new user account to the database.
+
+    Args:
+        db: Active SQLAlchemy database session.
+        email: Unique e-mail address for the new account.
+        hashed_password: Bcrypt-hashed password string.
+
+    Returns:
+        The newly created ``User`` ORM instance.
+
+    Raises:
+        Exception: Re-raises any database exception after rollback.
+    """
+    try:
+        user = User(email=email, hashed_password=hashed_password)
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        logger.info(f"Created new user account: {email}")
+        return user
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"Error creating user '{email}': {exc}")
+        raise exc
+
+
+def get_user_by_email(db: Session, email: str) -> User | None:
+    """
+    Look up a user by their e-mail address.
+
+    Args:
+        db: Active SQLAlchemy database session.
+        email: E-mail address to search for.
+
+    Returns:
+        Matching ``User`` instance, or ``None`` if not found.
+    """
+    return db.query(User).filter(User.email == email).first()
+
+
+def get_user_by_id(db: Session, user_id: int) -> User | None:
+    """
+    Look up a user by their primary-key ID.
+
+    Args:
+        db: Active SQLAlchemy database session.
+        user_id: Integer primary key.
+
+    Returns:
+        Matching ``User`` instance, or ``None`` if not found.
+    """
+    return db.query(User).filter(User.id == user_id).first()
+
+
+def revoke_token(db: Session, jti: str, expires_at: datetime) -> RevokedToken:
+    """
+    Add a JWT's ``jti`` claim to the revocation blacklist.
+
+    Called during logout to prevent the token from being reused
+    until it naturally expires.
+
+    Args:
+        db: Active SQLAlchemy database session.
+        jti: The unique JWT ID claim from the token payload.
+        expires_at: The token's original expiration datetime (UTC).
+
+    Returns:
+        The persisted ``RevokedToken`` instance.
+
+    Raises:
+        Exception: Re-raises any database exception after rollback.
+    """
+    try:
+        revoked = RevokedToken(jti=jti, expires_at=expires_at)
+        db.add(revoked)
+        db.commit()
+        db.refresh(revoked)
+        logger.info(f"Token revoked – jti={jti}")
+        return revoked
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"Error revoking token jti={jti}: {exc}")
+        raise exc
+
+
+def is_token_revoked(db: Session, jti: str) -> bool:
+    """
+    Check whether a JWT has been blacklisted (logged out).
+
+    Args:
+        db: Active SQLAlchemy database session.
+        jti: The unique JWT ID claim to look up.
+
+    Returns:
+        ``True`` if the token has been revoked; ``False`` otherwise.
+    """
+    return db.query(RevokedToken).filter(RevokedToken.jti == jti).first() is not None
+

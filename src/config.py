@@ -24,8 +24,63 @@ EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2"
 
 JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
 DATABASE_URL: str = os.getenv("DATABASE_URL")
+
+
+DOCS_TOKEN_ENV_MAP: dict[str, str] = {
+    # Rivyo
+    "rivyo_docs": "Rivyo_Docs",
+    "rivyo": "Rivyo_Docs",
+    # Editly
+    "editly_order_editing_app_docs": "Editly_Order_Editing_App_Docs",
+    "editly": "Editly_Order_Editing_App_Docs",
+    "editly_order_editing": "Editly_Order_Editing_App_Docs",
+    # Wishlist Club
+    "wishlist_club_app_docs": "Wishlist_Club_App_Docs",
+    "wishlist": "Wishlist_Club_App_Docs",
+    "wishlist_club": "Wishlist_Club_App_Docs",
+    # Utterbond
+    "utterbond_subscription_docs": "Utterbond_Subscription_Docs",
+    "utterbond": "Utterbond_Subscription_Docs",
+    "utterbond_subscription": "Utterbond_Subscription_Docs",
+    # Rebolt
+    "rebolt_bundle_docs": "Rebolt_Bundle_Docs",
+    "rebolt": "Rebolt_Bundle_Docs",
+    "rebolt_bundle": "Rebolt_Bundle_Docs",
+    # Addup
+    "addup_checkout_docs": "Addup_Checkout_Docs",
+    "addup": "Addup_Checkout_Docs",
+    "addup_checkout": "Addup_Checkout_Docs",
+    # Quickhunt
+    "quickhunt_docs": "Quickhunt_Docs",
+    "quickhunt": "Quickhunt_Docs",
+}
+
+
+def get_docs_bearer_token(attribute: str) -> str | None:
+    """
+    Resolve the Bearer token for a given docs attribute name.
+
+    Normalises *attribute* (lowercase, strip, replace spaces/hyphens with
+    underscores) and looks it up in :data:`DOCS_TOKEN_ENV_MAP`.  The
+    corresponding environment variable is then read at call-time so that
+    tokens rotated in the environment are picked up without a restart.
+
+    Args:
+        attribute: Human-friendly docs name sent by the client
+            (e.g. ``"Rivyo"`` or ``"Editly_Order_Editing_App_Docs"``).
+
+    Returns:
+        The raw token string from the environment (may itself be prefixed
+        with ``"Bearer "``), or ``None`` if no mapping or env var exists.
+    """
+    normalised = attribute.strip().lower().replace(" ", "_").replace("-", "_")
+    env_key = DOCS_TOKEN_ENV_MAP.get(normalised)
+    if not env_key:
+        return None
+    return os.getenv(env_key)
 
 LOGS_DIR = Path("logs")
 LOGS_DIR.mkdir(exist_ok=True)

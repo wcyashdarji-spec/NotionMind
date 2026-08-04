@@ -5,12 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "bcrypt<4.1",
     "chromadb>=1.5.9",
+    "email-validator>=2.0.0",
     "fastapi>=0.139.1",
     "fastmcp>=3.4.4",
     "httpx>=0.28.1",
     "langsmith>=0.10.15",
     "logfire[system-metrics]>=4.37.0",
+    "passlib>=1.7.4",
     "psycopg2-binary>=2.9.12",
     "pydantic>=2.13.4",
     "pydantic-ai>=2.12.0",
