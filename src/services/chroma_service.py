@@ -61,6 +61,8 @@ class ChromaService:
             logger.error(f"Chroma client initialisation failed: {exc}")
             raise RuntimeError(f"Chroma connection failed: {exc}") from exc
 
+        self._collection_cache: dict[str, Any] = {}
+
     async def setup_collection(self, collection_name: str, recreate: bool = False) -> None:
         """
         Create or verify the Chroma collection used for storing document chunks.
@@ -83,6 +85,8 @@ class ChromaService:
                     await asyncio.to_thread(self.client.delete_collection, collection_name)
                 except Exception as exc:
                     logger.debug(f"Drop collection '{collection_name}' warning: {exc}")
+
+                self._collection_cache.pop(collection_name, None)
 
             await asyncio.to_thread(
                 self.client.get_or_create_collection,
@@ -226,6 +230,43 @@ class ChromaService:
             logger.error(f"ingest() failed: {exc}")
             raise
 
+    async def _get_cached_collection(self, collection_name: str) -> Any:
+        """
+        Return a cached collection handle, fetching it from ChromaDB only on the
+        first call for a given *collection_name*.
+
+        The cached handle is invalidated automatically when :meth:`setup_collection`
+        recreates the collection.
+
+        Args:
+            collection_name: Name of the Chroma collection.
+
+        Returns:
+            A ready :class:`chromadb.Collection` handle.
+
+        Raises:
+            ValueError: If the collection does not exist in ChromaDB.
+            Exception: Propagates ChromaDB errors.
+        """
+        if collection_name not in self._collection_cache:
+            logger.debug(f"[Chroma] Cache miss – fetching handle for '{collection_name}'.")
+            
+            try:
+                handle = await asyncio.to_thread(
+                    self.client.get_collection,
+                    name=collection_name,
+                )
+            except Exception as exc:
+                raise ValueError(
+                    f"Collection '{collection_name}' does not exist or could not be loaded: {exc}"
+                ) from exc
+            
+            self._collection_cache[collection_name] = handle
+            logger.info(f"[Chroma] Cache populated for '{collection_name}'.")
+        else:
+            logger.info(f"[Chroma] Cache hit – reusing handle for '{collection_name}'.")
+        return self._collection_cache[collection_name]
+
     async def search(
         self,
         query: str,
@@ -234,6 +275,10 @@ class ChromaService:
     ) -> List[Dict[str, Any]]:
         """
         Execute semantic vector similarity search on the local collection.
+
+        The collection handle is cached after the first call, eliminating two
+        round-trips to ChromaDB (``list_collections`` + ``get_collection``) on
+        every subsequent request.
 
         Args:
             query: Natural-language query string.
@@ -249,15 +294,7 @@ class ChromaService:
             Exception: Propagates ChromaDB or embedding errors.
         """
         try:
-            collections = await asyncio.to_thread(self.client.list_collections)
-            collection_names = [col.name for col in collections]
-            if collection_name not in collection_names:
-                raise ValueError(f"Collection '{collection_name}' does not exist.")
-
-            collection = await asyncio.to_thread(
-                self.client.get_collection,
-                name=collection_name
-            )
+            collection = await self._get_cached_collection(collection_name)
 
             logger.info(
                 f"Chroma semantic search on '{collection_name}' | query='{query}' | limit={limit}"

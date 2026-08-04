@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.139.1",
     "fastmcp>=3.4.4",
     "httpx>=0.28.1",
+    "langsmith>=0.10.15",
     "logfire[system-metrics]>=4.37.0",
     "psycopg2-binary>=2.9.12",
     "pydantic>=2.13.4",

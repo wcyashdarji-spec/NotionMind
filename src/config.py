@@ -8,13 +8,17 @@ load_dotenv()
 
 NOTION_TOKEN: str | None = os.getenv("NOTION_TOKEN")
 
+LANGSMITH_TRACING: str = os.getenv("LANGSMITH_TRACING")
+LANGSMITH_ENDPOINT: str = os.getenv("LANGSMITH_ENDPOINT")
+LANGSMITH_API_KEY: str | None = os.getenv("LANGSMITH_API_KEY")
+LANGSMITH_PROJECT: str = os.getenv("LANGSMITH_PROJECT")
+
 MILVUS_ENDPOINT: str | None = os.getenv("MILVUS_ENDPOINT")
 MILVUS_TOKEN: str | None = os.getenv("MILVUS_TOKEN")
 MILVUS_COLLECTION_NAME: str = os.getenv("MILVUS_COLLECTION_NAME", "notion_documentation")
 
 CHROMA_DB_PATH: str = os.getenv("CHROMA_DB_PATH", "./chroma_db")
 CHROMA_COLLECTION_NAME: str = os.getenv("CHROMA_COLLECTION_NAME", "notion_documentation")
-
 
 EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
@@ -41,8 +45,11 @@ def setup_logger(name: str = "notion_ingestion") -> logging.Logger:
     Returns:
         A configured :class:`logging.Logger` instance.
     """
+    log_level_str = os.getenv("LOG_LEVEL", "DEBUG").upper()
+    log_level = getattr(logging, log_level_str, logging.DEBUG)
+
     log = logging.getLogger(name)
-    log.setLevel(logging.INFO)
+    log.setLevel(log_level)
 
     if log.handlers:
         return log
@@ -50,11 +57,11 @@ def setup_logger(name: str = "notion_ingestion") -> logging.Logger:
     formatter = logging.Formatter(_LOG_FORMAT, datefmt=_DATE_FORMAT)
 
     file_handler = logging.FileHandler(LOG_FILE_PATH, encoding="utf-8")
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(log_level)
     file_handler.setFormatter(formatter)
 
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(log_level)
     console_handler.setFormatter(formatter)
 
     log.addHandler(file_handler)

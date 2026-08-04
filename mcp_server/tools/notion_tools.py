@@ -1,15 +1,26 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Annotated, Any
 
 from pydantic import Field
 from fastmcp import FastMCP, Context
 
-from mcp_server.server import get_chroma_service
+from mcp_server import get_chroma_service
 from src.services.prompt_template import SYSTEM_PROMPT
 from src.utils.auth import verify_collection_access
 from src.config import CHROMA_COLLECTION_NAME, logger
+
+try:
+    from langsmith import traceable, trace as ls_trace
+    _LANGSMITH_AVAILABLE = True
+except ImportError:
+    _LANGSMITH_AVAILABLE = False
+    logger.warning(
+        "[MCP] 'langsmith' package not found. "
+        "Install it with `pip install langsmith` to enable tracing."
+    )
 
 
 class MCPToolRegistry:
@@ -83,7 +94,7 @@ class MCPToolRegistry:
                     ge=1,
                     le=20,
                 ),
-            ] = 5,
+            ] = 20,
             collection_name: Annotated[
                 str,
                 Field(
@@ -154,32 +165,81 @@ class MCPToolRegistry:
                     {
                         "status": "unauthorized",
                         "error": reason,
-                        # "collection": collection_name,
                     },
                     ensure_ascii=False,
-                    indent=2,
                 )
 
             try:
                 service = get_chroma_service()
 
-                raw_results = await service.search(
-                    query=query,
-                    collection_name=collection_name,
-                    limit=limit,
+                _ls_enabled = (
+                    _LANGSMITH_AVAILABLE
+                    and os.getenv("LANGSMITH_TRACING", "").lower() in ("true", "1")
                 )
 
-                results: list[dict[str, Any]] = [
-                    {
-                        "rank": rank,
-                        "score": round(hit.get("score") or 0.0, 6),
-                        "title": hit.get("title", "Untitled"),
-                        "url": hit.get("url", ""),
-                        "chunk_index": hit.get("chunk_index", 0),
-                        "text": (hit.get("text") or "")
-                    }
-                    for rank, hit in enumerate(raw_results, start=1)
-                ]
+                if _ls_enabled:
+                    with ls_trace(
+                        name="search_notion_docs",
+                        run_type="retriever",
+                        project_name=os.getenv("LANGSMITH_PROJECT", "Notion-MCP-Server"),
+                        inputs={
+                            "query": query,
+                            "limit": limit,
+                            "collection": collection_name,
+                        },
+                    ) as ls_run:
+                        raw_results = await service.search(
+                            query=query,
+                            collection_name=collection_name,
+                            limit=limit,
+                        )
+
+                        results: list[dict[str, Any]] = [
+                            {
+                                "rank": rank,
+                                "score": round(hit.get("score") or 0.0, 6),
+                                "title": hit.get("title", "Untitled"),
+                                "url": hit.get("url", ""),
+                                "chunk_index": hit.get("chunk_index", 0),
+                                "text": (hit.get("text") or ""),
+                            }
+                            for rank, hit in enumerate(raw_results, start=1)
+                        ]
+
+                        ls_run.add_outputs(
+                            {
+                                "total_results": len(results),
+                                "docs_retrieved": [
+                                    {
+                                        "rank": r["rank"],
+                                        "title": r["title"],
+                                        "score": r["score"],
+                                        "chunk_index": r["chunk_index"],
+                                        "url": r["url"],
+                                    }
+                                    for r in results
+                                ],
+                            }
+                        )
+                else:
+
+                    raw_results = await service.search(
+                        query=query,
+                        collection_name=collection_name,
+                        limit=limit,
+                    )
+
+                    results = [
+                        {
+                            "rank": rank,
+                            "score": round(hit.get("score") or 0.0, 6),
+                            "title": hit.get("title", "Untitled"),
+                            "url": hit.get("url", ""),
+                            "chunk_index": hit.get("chunk_index", 0),
+                            "text": (hit.get("text") or ""),
+                        }
+                        for rank, hit in enumerate(raw_results, start=1)
+                    ]
 
                 logger.info(f"[MCP:search] Returned {len(results)} result(s).")
 
@@ -191,7 +251,6 @@ class MCPToolRegistry:
                         "results": results,
                     },
                     ensure_ascii=False,
-                    indent=2,
                 )
 
             except Exception as exc:

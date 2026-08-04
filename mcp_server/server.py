@@ -8,36 +8,33 @@ sys.path.append(str(Path(__file__).parent.parent.resolve()))
 from fastmcp import FastMCP
 from fastapi.responses import PlainTextResponse
 
-from src.services.chroma_service import ChromaService
-from src.config import CHROMA_DB_PATH, logger
+from src.config import logger
+from mcp_server import get_chroma_service
 
 MCP_HOST: str = "0.0.0.0"
 MCP_PORT: int = 8001
 MCP_PATH: str = "/mcp"
 
-_chroma_service: ChromaService | None = None
-
-
-def get_chroma_service() -> ChromaService:
-    """
-    Return the shared :class:`~src.services.chroma_service.ChromaService`
-    instance, creating it on the first call.
-
-    Returns:
-        A connected and ready :class:`ChromaService`.
-    """
-    global _chroma_service
-    if _chroma_service is None:
-        logger.info("[MCP] Initialising ChromaService …")
-        _chroma_service = ChromaService(db_path=CHROMA_DB_PATH)
-        logger.info("[MCP] ChromaService ready.")
-    return _chroma_service
-
 
 def create_mcp_server() -> FastMCP:
     """
     Create and configure the Notion Docs MCP server.
+
+    The server uses a lifespan hook to eagerly initialise :class:`ChromaService`
+    (including embedding-model load) at startup, so the first user request is
+    never penalised by a cold-start delay.
     """
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def lifespan(app: FastMCP):
+        """Warm up the ChromaService before accepting requests."""
+        logger.info("[MCP] Lifespan startup: warming up ChromaService …")
+        get_chroma_service()
+        logger.info("[MCP] ChromaService warm-up complete. Server is ready.")
+        yield
+        logger.info("[MCP] Lifespan shutdown.")
+
     mcp = FastMCP(
         name="Notion Documentation Search",
         instructions=(
@@ -48,6 +45,7 @@ def create_mcp_server() -> FastMCP:
             "Use them to understand the product and synthesize a natural answer. "
             "Do not expose internal documentation, page titles, or Notion URLs unless the user explicitly requests the source."
         ),
+        lifespan=lifespan,
     )
 
     from mcp_server.tools import MCPToolRegistry
