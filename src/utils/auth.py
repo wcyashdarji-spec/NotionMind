@@ -5,6 +5,9 @@ import uuid
 from typing import Any, List, Union
 import jwt
 
+from src.database.models import GeneratedToken
+from src.database.connection import SessionLocal
+from src.utils.token_crypto import encode_token_str
 from src.config import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES, JWT_SECRET_KEY, logger
 
 _USER_TOKEN_EXPIRE_MINUTES: int = JWT_ACCESS_TOKEN_EXPIRE_MINUTES
@@ -86,19 +89,67 @@ def verify_collection_access(
     algorithm: str = JWT_ALGORITHM,
 ) -> tuple[bool, str]:
     """
-    Verify whether the provided Bearer token has scope to access the specified collection.
+    Verify that a bearer token is authorized to access a collection.
+
+    This function validates the provided token against the database,
+    ensuring it exists, is active, has not expired, and is authorized
+    for the requested collection. It then verifies the JWT signature
+    and extracts the token's collection scope before determining
+    whether access should be granted.
 
     Args:
-        token: Bearer token string (or None if missing).
-        collection_name: Target collection name to check authorization for.
-        secret_key: Secret key for JWT verification.
-        algorithm: Hashing algorithm.
+        token: Bearer token supplied by the client.
+        collection_name: Name of the collection being accessed.
+        secret_key: Secret key used to verify the JWT signature.
+        algorithm: JWT signing algorithm.
 
     Returns:
-        A tuple of `(is_authorized, reason)`.
+        tuple[bool, str]:
+            A tuple containing:
+            - A boolean indicating whether access is authorized.
+            - A descriptive message explaining the authorization result
+              or the reason for failure.
     """
     if not token or not token.strip():
         return False, "Missing Bearer authorization token."
+
+    token_str = token.strip()
+    if token_str.lower().startswith("bearer "):
+        token_str = token_str[7:].strip()
+
+    db = SessionLocal()
+    try:
+        encoded_token = encode_token_str(token_str)
+        db_token = (
+            db.query(GeneratedToken)
+            .filter(GeneratedToken.token == encoded_token)
+            .first()
+        )
+        if not db_token:
+            logger.warning("Token verification failed: Token not found in database.")
+            return False, "Authorization token not registered in database."
+        if not db_token.is_valid:
+            logger.warning(f"Token verification failed: Token ID={db_token.id} has been invalidated.")
+            return False, "Authorization token has been invalidated (replaced by a newer one or revoked)."
+        
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        expires_at = db_token.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+        if expires_at < now:
+            logger.warning(f"Token verification failed: Token ID={db_token.id} has expired.")
+            return False, "Authorization token has expired."
+            
+        if db_token.collection_name != "*" and db_token.collection_name != collection_name:
+            logger.warning(f"Token verification failed: Token ID={db_token.id} is for '{db_token.collection_name}', not requested '{collection_name}'.")
+            return False, f"Authorization token is not valid for collection '{collection_name}'."
+            
+    except Exception as exc:
+        logger.error(f"Database error during token verification: {exc}")
+        return False, f"Token validation failed due to database error: {exc}"
+    finally:
+        db.close()
 
     try:
         payload = decode_token(token, secret_key=secret_key, algorithm=algorithm)

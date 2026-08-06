@@ -377,11 +377,9 @@ async def delete_collection(
     logger.info(f"Collection deletion requested – collection='{collection_name}'.")
 
     try:
-        # 1. Delete from Vector DB (ChromaDB)
         chroma = ChromaService(db_path=CHROMA_DB_PATH)
         delete_stats = await chroma.delete_collection(collection_name)
 
-        # 2. Delete from database (SQLAlchemy)
         deleted_from_db = delete_ingestion_record(db=db, collection_name=collection_name)
 
         if not deleted_from_db and delete_stats["chunks_deleted"] == 0:

@@ -298,21 +298,37 @@ class NotionService:
             
     async def download_image(self, url: str, block_id: str) -> str | None:
         """
-        Download an image from Notion/external URL, determine its format,
-        and save it to static/images/ folder. Returns the local static path.
+        Download and store an image from a remote source.
+
+        This method retrieves an image from the provided URL, detects its
+        format, saves it to the local ``static/images`` directory using the
+        associated block identifier as the filename, and returns the
+        corresponding static file path for later access.
+
+        Args:
+            url: URL of the image to download.
+            block_id: Unique identifier used to generate the local filename.
+
+        Returns:
+            str | None:
+                The local static image path if the download succeeds,
+                otherwise ``None``.
+
+        Raises:
+            None:
+                Any exceptions are logged internally, and the method
+                returns ``None`` if the image cannot be downloaded or
+                saved.
         """
         try:
             import os
             import io
             from PIL import Image
 
-            # Ensure static/images exists
             os.makedirs("static/images", exist_ok=True)
 
             logger.info(f"Downloading image for block {block_id} ...")
             
-            # Use clean httpx.AsyncClient without Notion Version and Auth headers
-            # to avoid AWS S3 authorization errors
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url)
                 response.raise_for_status()
@@ -326,7 +342,6 @@ class NotionService:
             filename = f"{block_id}.{img_format}"
             local_path = os.path.join("static/images", filename)
             
-            # Save the image file
             if img.mode in ("RGBA", "LA") and img_format == "jpg":
                 img = img.convert("RGB")
                 

@@ -161,20 +161,28 @@ class ChromaService:
         chunk_overlap: int = 500,
     ) -> int:
         """
-        Chunk, embed, and insert documents (both text chunks and images) into the specified Chroma collection.
+        Ingest documents and images into a Chroma vector collection.
+
+        This method processes raw documents by splitting text into chunks,
+        generating embeddings for both text and images, and storing the
+        resulting vectors along with their metadata in the specified
+        ChromaDB collection. The collection may optionally be recreated
+        before ingestion begins.
 
         Args:
-            documents: Raw page documents from the Notion crawler.
-            collection_name: Target Chroma collection name.
-            recreate: Drop and recreate the collection before inserting.
-            chunk_size: Max character count per chunk.
-            chunk_overlap: Overlap character budget between chunks.
+            documents: Raw documents to ingest.
+            collection_name: Target Chroma collection.
+            recreate: Whether to recreate the collection before ingestion.
+            chunk_size: Maximum number of characters per text chunk.
+            chunk_overlap: Number of overlapping characters between chunks.
 
         Returns:
-            Total number of chunk records inserted (text + images).
+            int:
+                The total number of text chunks and image records stored.
 
         Raises:
-            Exception: Propagates ChromaDB or embedding errors.
+            Exception:
+                Propagates embedding, storage, or ChromaDB errors.
         """
         if not documents:
             logger.warning("ingest() called with an empty document list.")
@@ -183,10 +191,8 @@ class ChromaService:
         try:
             await self.setup_collection(collection_name, recreate=recreate)
 
-            # 1. Prepare text chunks
             chunks = self._prepare_chunks(documents, chunk_size, chunk_overlap)
             
-            # 2. Extract and prepare images across all documents
             images_to_ingest = []
             for doc in documents:
                 page_images = doc.get("images", [])
@@ -202,14 +208,11 @@ class ChromaService:
                         "original_url": img["original_url"],
                     })
 
-            # Calculate total records
             total_records = len(chunks) + len(images_to_ingest)
             if total_records == 0:
                 logger.warning("No chunks or images produced; nothing to insert.")
                 return 0
 
-            # 3. Generate embeddings
-            # Embed text chunks
             logger.info(f"Encoding {len(chunks)} text chunk(s) …")
             if len(chunks) > 0:
                 texts = [c["text"] for c in chunks]
@@ -229,7 +232,6 @@ class ChromaService:
                 for idx, emb in enumerate(text_embeddings):
                     chunks[idx]["text_dense"] = emb
 
-            # Embed image records
             logger.info(f"Encoding {len(images_to_ingest)} image(s) …")
             if len(images_to_ingest) > 0:
                 from PIL import Image
@@ -249,17 +251,14 @@ class ChromaService:
                         logger.error(f"Failed to load/embed image {disk_path}: {img_exc}")
                         img_rec["text_dense"] = None
 
-                # Filter out images that failed to encode
                 images_to_ingest = [img for img in images_to_ingest if img["text_dense"] is not None]
 
-            # 4. Ingest into Chroma
             collection = await asyncio.to_thread(
                 self.client.get_or_create_collection,
                 name=collection_name,
                 metadata={"hnsw:space": "cosine"}
             )
 
-            # Ingest text chunks
             inserted = 0
             if len(chunks) > 0:
                 for batch_start in range(0, len(chunks), _BATCH_SIZE):
@@ -285,7 +284,6 @@ class ChromaService:
                     inserted += len(batch)
                     logger.info(f"Ingested {len(batch)} text chunk(s) (total text chunks: {inserted}/{len(chunks)}).")
 
-            # Ingest image records
             img_inserted = 0
             if len(images_to_ingest) > 0:
                 for batch_start in range(0, len(images_to_ingest), _BATCH_SIZE):
@@ -323,21 +321,26 @@ class ChromaService:
 
     async def _get_cached_collection(self, collection_name: str) -> Any:
         """
-        Return a cached collection handle, fetching it from ChromaDB only on the
-        first call for a given *collection_name*.
+        Retrieve a cached Chroma collection handle.
 
-        The cached handle is invalidated automatically when :meth:`setup_collection`
-        recreates the collection.
+        This method returns an existing cached collection handle when
+        available, avoiding repeated lookups to ChromaDB. If the handle is
+        not already cached, it is loaded from the database, cached for
+        future requests, and then returned.
 
         Args:
             collection_name: Name of the Chroma collection.
 
         Returns:
-            A ready :class:`chromadb.Collection` handle.
+            Any:
+                A ready-to-use Chroma collection handle.
 
         Raises:
-            ValueError: If the collection does not exist in ChromaDB.
-            Exception: Propagates ChromaDB errors.
+            ValueError:
+                If the requested collection does not exist.
+            Exception:
+                Propagates any errors encountered while loading the
+                collection.
         """
         if collection_name not in self._collection_cache:
             logger.debug(f"[Chroma] Cache miss – fetching handle for '{collection_name}'.")
@@ -365,24 +368,28 @@ class ChromaService:
         limit: int = 5,
     ) -> List[Dict[str, Any]]:
         """
-        Execute semantic vector similarity search on the local collection.
+        Perform semantic similarity search on a Chroma collection.
 
-        The collection handle is cached after the first call, eliminating two
-        round-trips to ChromaDB (``list_collections`` + ``get_collection``) on
-        every subsequent request.
+        This method generates an embedding for the supplied query, performs
+        a vector similarity search against the specified collection, and
+        returns the most relevant text and image results together with
+        their metadata and similarity scores.
 
         Args:
-            query: Natural-language query string.
+            query: Natural language search query.
             collection_name: Chroma collection to search.
-            limit: Maximum number of results to return.
+            limit: Maximum number of matching results to return.
 
         Returns:
-            List of result dicts, each containing ``id``, ``score``,
-            ``page_id``, ``title``, ``url``, ``text``, and ``chunk_index``.
+            List[Dict[str, Any]]:
+                A list of matching documents and images ordered by
+                similarity.
 
         Raises:
-            ValueError: When the collection does not exist.
-            Exception: Propagates ChromaDB or embedding errors.
+            ValueError:
+                If the specified collection does not exist.
+            Exception:
+                Propagates embedding or ChromaDB search errors.
         """
         try:
             collection = await self._get_cached_collection(collection_name)
@@ -435,12 +442,10 @@ class ChromaService:
                         import re
                         text_content = documents_list[idx]
                         
-                        # Extract inline image paths from the markdown text
                         image_paths = re.findall(r'!\[.*?\]\((/static/images/.*?)\)', text_content)
                         
-                        # Clean the raw image markdown tags out of the text content
                         cleaned_text = re.sub(r'!\[.*?\]\((/static/images/.*?)\)', '', text_content)
-                        # Normalize whitespace and trailing newlines
+
                         cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text).strip()
                         
                         res.update({
@@ -460,13 +465,25 @@ class ChromaService:
 
     async def delete_collection(self, collection_name: str) -> dict[str, Any]:
         """
-        Delete a collection and all associated vector chunks and local image files from ChromaDB.
+        Delete a Chroma collection and its associated resources.
+
+        This method removes the specified Chroma collection, deletes any
+        locally stored image files referenced by the collection, clears the
+        cached collection handle, and attempts to remove the underlying
+        index folders from disk.
 
         Args:
             collection_name: Name of the collection to delete.
 
         Returns:
-            A dictionary containing stats about what was deleted.
+            dict[str, Any]:
+                Summary information describing the deleted chunks, images,
+                image files, and index folders.
+
+        Raises:
+            Exception:
+                Propagates any errors encountered while deleting the
+                collection and its associated resources.
         """
         import os
         import sqlite3
@@ -478,7 +495,6 @@ class ChromaService:
         folders_to_delete = []
 
         try:
-            # 1. Identify physical HNSW index folder(s) in SQLite before dropping
             sqlite_file = os.path.join(self.db_path, "chroma.sqlite3")
             if os.path.exists(sqlite_file):
                 try:
@@ -502,10 +518,8 @@ class ChromaService:
                 except Exception as sql_exc:
                     logger.warning(f"Could not query Chroma SQLite database for collection folder cleanup: {sql_exc}")
 
-            # 2. Try to get collection first to retrieve metadata (especially for images)
             try:
                 collection = await self._get_cached_collection(collection_name)
-                # Get all records to scan for local image files
                 results = await asyncio.to_thread(
                     collection.get,
                     include=["metadatas"]
@@ -515,7 +529,6 @@ class ChromaService:
                     for metadata in results["metadatas"]:
                         if metadata and "local_path" in metadata:
                             local_path = metadata["local_path"]
-                            # Convert relative static path to local system path (e.g. static/images/block_id.png)
                             disk_path = local_path.lstrip("/")
                             if os.path.exists(disk_path):
                                 try:
@@ -526,12 +539,10 @@ class ChromaService:
                                 except Exception as img_exc:
                                     logger.error(f"Failed to delete local image file {disk_path}: {img_exc}")
             except ValueError:
-                # Collection does not exist in Chroma cache or database
                 logger.warning(f"Chroma collection '{collection_name}' not found during deletion scan.")
             except Exception as scan_exc:
                 logger.error(f"Error scanning collection '{collection_name}' for deletion: {scan_exc}")
 
-            # 3. Drop the collection from ChromaDB
             logger.info(f"Dropping Chroma collection '{collection_name}' …")
             try:
                 await asyncio.to_thread(self.client.delete_collection, collection_name)
@@ -541,7 +552,6 @@ class ChromaService:
             self._collection_cache.pop(collection_name, None)
             logger.info(f"Chroma collection '{collection_name}' deleted successfully.")
 
-            # 4. Attempt to clean up physical HNSW segment directories from disk
             deleted_folders = []
             for folder in folders_to_delete:
                 folder_path = os.path.join(self.db_path, folder)

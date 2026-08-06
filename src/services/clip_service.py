@@ -8,12 +8,29 @@ from src.config import logger
 
 class ClipService:
     """
-    Service class for openai/clip-vit-base-patch32 text and image embedding.
+    Generate multimodal embeddings using the CLIP model.
+
+    This service loads a pretrained CLIP model and provides methods
+    for producing normalized vector embeddings from both text and
+    images. The generated embeddings can be used for semantic search,
+    retrieval, and similarity comparisons.
     """
 
     def __init__(self, model_name: str = "openai/clip-vit-base-patch32") -> None:
         """
-        Load the CLIP model and processor.
+        Initialize the CLIP embedding service.
+
+        This constructor loads the specified pretrained CLIP model and
+        processor, automatically selecting a GPU when available or falling
+        back to the CPU. The loaded model is reused for subsequent text
+        and image embedding operations.
+
+        Args:
+            model_name: Name or path of the pretrained CLIP model.
+
+        Raises:
+            RuntimeError:
+                If the CLIP model or processor cannot be loaded.
         """
         self.model_name = model_name
         try:
@@ -28,7 +45,24 @@ class ClipService:
 
     def get_text_embedding(self, text: str) -> list[float]:
         """
-        Generate a normalized 512-dimension vector embedding for text.
+        Generate a normalized embedding for a text input.
+
+        This method processes the supplied text using the CLIP text
+        encoder and returns a normalized feature vector suitable for
+        semantic search, similarity matching, and vector database
+        indexing.
+
+        Args:
+            text: Text to convert into an embedding.
+
+        Returns:
+            list[float]:
+                A normalized embedding vector representing the input text.
+
+        Raises:
+            Exception:
+                Propagates any errors encountered while generating the
+                text embedding.
         """
         try:
             inputs = self.processor(
@@ -37,7 +71,6 @@ class ClipService:
             with torch.no_grad():
                 text_features = self.model.get_text_features(**inputs)
                 
-                # Extract tensor if wrapped in BaseModelOutputWithPooling
                 if not torch.is_tensor(text_features):
                     if hasattr(text_features, "text_features"):
                         text_features = text_features.text_features
@@ -54,14 +87,29 @@ class ClipService:
 
     def get_image_embedding(self, image: Image.Image) -> list[float]:
         """
-        Generate a normalized 512-dimension vector embedding for a PIL Image.
+        Generate a normalized embedding for an image.
+
+        This method processes a PIL image using the CLIP image encoder
+        and returns a normalized feature vector that can be compared with
+        other image or text embeddings in a shared semantic space.
+
+        Args:
+            image: PIL image to convert into an embedding.
+
+        Returns:
+            list[float]:
+                A normalized embedding vector representing the input image.
+
+        Raises:
+            Exception:
+                Propagates any errors encountered while generating the
+                image embedding.
         """
         try:
             inputs = self.processor(images=image, return_tensors="pt").to(self.device)
             with torch.no_grad():
                 image_features = self.model.get_image_features(**inputs)
                 
-                # Extract tensor if wrapped in BaseModelOutputWithPooling
                 if not torch.is_tensor(image_features):
                     if hasattr(image_features, "image_features"):
                         image_features = image_features.image_features

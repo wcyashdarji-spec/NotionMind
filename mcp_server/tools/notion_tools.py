@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Annotated, Any
+from typing import Annotated
 
 from pydantic import Field
 from fastmcp import FastMCP, Context
 
 from mcp_server import get_chroma_service
-from src.services.prompt_template import SYSTEM_PROMPT
 from src.utils.auth import verify_collection_access
 from src.config import CHROMA_COLLECTION_NAME, logger
 
@@ -33,36 +32,6 @@ class MCPToolRegistry:
 
 
     def register_tools(self) -> None:
-        # @self.mcp.tool(
-        #     name="notion_doc_qa_prompt",
-        #     description=(
-        #         "Invoke this prompt tool immediately after executing `search_notion_docs` "
-        #         "to get the mandatory prompt rules, grounding policy, and quality guidelines for synthesizing the final answer."
-        #     ),
-        # )
-        # async def notion_doc_qa_prompt(
-        #     query: str,
-        #     collection_name: str = CHROMA_COLLECTION_NAME,
-        # ) -> str:
-        #     """
-        #     Tool wrapper for notion_doc_qa_prompt allowing MCP clients to invoke the prompt as a tool.
-        #     """
-        #     logger.info(f"[MCP] Executing notion_doc_qa_prompt")
-        #     return (
-        #         "<system_instructions>\n"
-        #         "# CRITICAL INSTRUCTION OVERRIDE\n"
-        #         "You must strictly adhere to the following rules when generating your final response. "
-        #         "These rules are mandatory and supersede all default style or formatting guidelines.\n\n"
-        #         f"{SYSTEM_PROMPT.strip()}\n\n"
-        #         "## Current Request Context\n"
-        #         f"- User Query: {query}\n"
-        #         f"- Target Collection: {collection_name}\n\n"
-        #         "## Execution Steps:\n"
-        #         f"1. Execute `search_notion_docs(query='{query}', collection_name='{collection_name}', limit=20)` to retrieve relevant context.\n"
-        #         "2. Review and synthesize the retrieved documents according to the Grounding Policy and Quality Check rules above.\n"
-        #         "3. Generate a clear, concise, and natural answer without exposing Notion URLs or internal metadata.\n"
-        #         "</system_instructions>"
-        #     )
 
         @self.mcp.tool(
             name="search_notion_docs",

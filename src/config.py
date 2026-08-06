@@ -20,7 +20,7 @@ MILVUS_COLLECTION_NAME: str = os.getenv("MILVUS_COLLECTION_NAME", "notion_docume
 CHROMA_DB_PATH: str = os.getenv("CHROMA_DB_PATH", "./chroma_db")
 CHROMA_COLLECTION_NAME: str = os.getenv("CHROMA_COLLECTION_NAME", "notion_documentation")
 
-EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "openai/clip-vit-base-patch32")
+EMBEDDING_MODEL_NAME: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 
 JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")

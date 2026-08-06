@@ -93,3 +93,41 @@ class RevokedToken(Base):
     jti = Column(String(64), nullable=False, unique=True, index=True)
     revoked_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     expires_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class GeneratedToken(Base):
+    """
+    SQLAlchemy model representing a generated token with metadata.
+    Stores the encoded token, collection scope, duration, validity status, and timestamps.
+    """
+
+    __tablename__ = "generated_tokens"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    token = Column(String, nullable=False, index=True)
+    collection_name = Column(String(255), nullable=False, index=True)
+    duration_days = Column(Integer, nullable=False)
+    is_valid = Column(Boolean, default=True, nullable=False)
+    
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
+    def to_dict(self) -> dict:
+        """Convert ORM model instance to dictionary representation."""
+        return {
+            "id": self.id,
+            "token": self.token,
+            "collection_name": self.collection_name,
+            "duration_days": self.duration_days,
+            "is_valid": self.is_valid,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+

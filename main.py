@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from src.config import logger
 from src.database import init_db
-from src.routes import agent, auth, health, ingest, logs, search
+from src.routes import agent, auth, health, ingest, logs, search, token
 
 app = FastAPI(
     title="Notion → Zilliz Milvus Ingestion Service",
@@ -23,6 +23,7 @@ app.include_router(ingest.router)
 app.include_router(search.router)
 app.include_router(logs.router)
 app.include_router(agent.router)
+app.include_router(token.router)
 
 os.makedirs("static/images", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")

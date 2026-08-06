@@ -162,3 +162,26 @@ class DeleteCollectionResponse(BaseModel):
     message: str = Field(..., description="Details about the deleted resource counts.")
 
 
+class TokenGenerateRequest(BaseModel):
+    collection_name: str = Field(..., description="The name of the collection to generate the token for.")
+    expires_days: int = Field(30, description="Expiration period in days. Must be 30, 60, or 90.")
+
+
+class TokenGenerateResponse(BaseModel):
+    id: int
+    token: str
+    collection_name: str
+    duration_days: int
+    is_valid: bool
+    created_at: str
+    expires_at: str
+
+
+class TokenListItem(BaseModel):
+    id: int
+    token: str
+    collection_name: str
+    duration_days: int
+    is_valid: bool
+    created_at: str
+    expires_at: str

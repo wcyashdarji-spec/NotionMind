@@ -9,8 +9,10 @@ from src.database.crud import (
     get_user_by_id,
     revoke_token,
     is_token_revoked,
+    create_generated_token,
+    get_generated_tokens,
 )
-from src.database.models import IngestionRecord, User, RevokedToken
+from src.database.models import IngestionRecord, User, RevokedToken, GeneratedToken
 
 __all__ = [
     "Base",
@@ -21,6 +23,7 @@ __all__ = [
     "IngestionRecord",
     "User",
     "RevokedToken",
+    "GeneratedToken",
     "upsert_ingestion_record",
     "get_ingestion_record_by_collection",
     "list_ingestion_records",
@@ -30,4 +33,6 @@ __all__ = [
     "get_user_by_id",
     "revoke_token",
     "is_token_revoked",
+    "create_generated_token",
+    "get_generated_tokens",
 ]

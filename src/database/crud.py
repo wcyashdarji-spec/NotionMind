@@ -5,7 +5,8 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from src.config import logger
-from src.database.models import IngestionRecord, RevokedToken, User, utc_now
+from src.utils.token_crypto import encode_token_str
+from src.database.models import IngestionRecord, RevokedToken, User, utc_now, GeneratedToken
 
 
 def upsert_ingestion_record(
@@ -258,5 +259,78 @@ def delete_ingestion_record(db: Session, collection_name: str) -> bool:
         db.rollback()
         logger.error(f"Error deleting ingestion record for '{collection_name}': {exc}")
         raise exc
+
+
+def create_generated_token(
+    db: Session,
+    token: str,
+    collection_name: str,
+    duration_days: int,
+    expires_at: datetime,
+) -> GeneratedToken:
+    """
+    Create and store a new generated token for a collection.
+
+    This function invalidates any existing active tokens associated
+    with the specified collection, securely encodes the new token,
+    stores it in the database with its expiration details, and
+    returns the newly created token record.
+
+    Raises:
+        Exception:
+            Propagates any database errors encountered while creating
+            or persisting the generated token.
+    """
+    try:
+        existing = (
+            db.query(GeneratedToken)
+            .filter(
+                GeneratedToken.collection_name == collection_name,
+                GeneratedToken.is_valid == True,
+            )
+            .all()
+        )
+        for old_token in existing:
+            logger.info(f"Invalidating existing token ID={old_token.id} for collection '{collection_name}'.")
+            old_token.is_valid = False
+            old_token.updated_at = utc_now()
+
+        encoded_token = encode_token_str(token)
+
+        now = utc_now()
+        new_token = GeneratedToken(
+            token=encoded_token,
+            collection_name=collection_name,
+            duration_days=duration_days,
+            is_valid=True,
+            created_at=now,
+            expires_at=expires_at,
+            updated_at=now,
+        )
+        db.add(new_token)
+        db.commit()
+        db.refresh(new_token)
+        logger.info(f"Successfully stored new token ID={new_token.id} for collection '{collection_name}'.")
+        return new_token
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"Error creating generated token for '{collection_name}': {exc}")
+        raise exc
+
+
+def get_generated_tokens(db: Session) -> List[GeneratedToken]:
+    """
+    Retrieve all generated tokens from the database.
+
+    This function returns every generated token ordered by creation
+    time in descending order, allowing the most recently created
+    tokens to appear first in the result set.
+
+    Returns:
+        List[GeneratedToken]:
+            A list of generated token records sorted by creation time.
+    """
+    return db.query(GeneratedToken).order_by(GeneratedToken.created_at.desc()).all()
+
 
 
