@@ -153,3 +153,12 @@ class UpdateAllResponse(BaseModel):
     updated_collections: list[UpdateResponse] = Field(..., description="Details of each updated collection.")
     message: str = Field(..., description="Summary message of the run.")
 
+
+class DeleteCollectionResponse(BaseModel):
+    """Response body for the collection deletion endpoint."""
+
+    status: str = Field(..., description="Status of the deletion operation (always 'success').")
+    collection_name: str = Field(..., description="The name of the deleted collection.")
+    message: str = Field(..., description="Details about the deleted resource counts.")
+
+

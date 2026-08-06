@@ -12,3 +12,4 @@ wheels/
 /logs
 
 /chroma_db
+/static

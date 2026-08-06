@@ -226,3 +226,37 @@ def is_token_revoked(db: Session, jti: str) -> bool:
     """
     return db.query(RevokedToken).filter(RevokedToken.jti == jti).first() is not None
 
+
+def delete_ingestion_record(db: Session, collection_name: str) -> bool:
+    """
+    Delete the ingestion record for a collection from the database.
+
+    Args:
+        db: Active SQLAlchemy database session.
+        collection_name: Collection identifier.
+
+    Returns:
+        ``True`` if the record was successfully found and deleted; ``False`` otherwise.
+
+    Raises:
+        Exception: Re-raises any database exception after rolling back
+            the active transaction.
+    """
+    try:
+        record = (
+            db.query(IngestionRecord)
+            .filter(IngestionRecord.collection_name == collection_name)
+            .first()
+        )
+        if record:
+            logger.info(f"Deleting database entry for collection '{collection_name}'.")
+            db.delete(record)
+            db.commit()
+            return True
+        return False
+    except Exception as exc:
+        db.rollback()
+        logger.error(f"Error deleting ingestion record for '{collection_name}': {exc}")
+        raise exc
+
+

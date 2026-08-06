@@ -12,8 +12,8 @@ from src.config import (
 from src.utils.deps import get_current_token
 from src.services.chroma_service import ChromaService
 from src.services.notion_service import NotionService
-from src.database import get_db, list_ingestion_records, upsert_ingestion_record, IngestionRecord
-from src.utils.schemas import IngestRequest, IngestResponse, UpdateRequest, UpdateResponse, UpdateAllRequest, UpdateAllResponse
+from src.database import get_db, list_ingestion_records, upsert_ingestion_record, delete_ingestion_record, IngestionRecord
+from src.utils.schemas import IngestRequest, IngestResponse, UpdateRequest, UpdateResponse, UpdateAllRequest, UpdateAllResponse, DeleteCollectionResponse
 
 router = APIRouter(prefix="/api", tags=["Ingestion"])
 
@@ -351,6 +351,66 @@ async def update_all_collections(
         updated_collections=updated_list,
         message=msg,
     )
+
+
+@router.delete(
+    "/collection/{collection_name}",
+    summary="Delete collection and all relevant data",
+    response_model=DeleteCollectionResponse,
+    response_description="Confirmation of collection and chunk deletion.",
+)
+async def delete_collection(
+    collection_name: str,
+    db: Session = Depends(get_db),
+    _token: dict = Depends(get_current_token),
+) -> DeleteCollectionResponse:
+    """
+    Delete a collection and all associated data, including chunks stored in the vector database,
+    local image assets downloaded, and metadata records in PostgreSQL.
+
+    Args:
+        collection_name: Name of the collection to delete.
+
+    Returns:
+        A response confirming the deletion stats.
+    """
+    logger.info(f"Collection deletion requested – collection='{collection_name}'.")
+
+    try:
+        # 1. Delete from Vector DB (ChromaDB)
+        chroma = ChromaService(db_path=CHROMA_DB_PATH)
+        delete_stats = await chroma.delete_collection(collection_name)
+
+        # 2. Delete from database (SQLAlchemy)
+        deleted_from_db = delete_ingestion_record(db=db, collection_name=collection_name)
+
+        if not deleted_from_db and delete_stats["chunks_deleted"] == 0:
+            logger.warning(f"No collection or ingestion record found for '{collection_name}'.")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Collection '{collection_name}' not found."
+            )
+
+        msg = (
+            f"Successfully deleted collection '{collection_name}'. "
+            f"Deleted {delete_stats['chunks_deleted']} chunk(s) from ChromaDB, "
+            f"{delete_stats['images_deleted']} downloaded image(s), "
+            f"and metadata record from database."
+        )
+        logger.info(msg)
+
+        return DeleteCollectionResponse(
+            status="success",
+            collection_name=collection_name,
+            message=msg,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception(f"Failed to delete collection '{collection_name}': {exc}")
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 
 

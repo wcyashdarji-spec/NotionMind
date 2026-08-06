@@ -291,29 +291,71 @@ class NotionService:
                 if prop.get("type") == "title":
                     return self.extract_rich_text(prop.get("title", []))
             return "Untitled Page"
+        
         except Exception as exc:
             logger.error(f"get_page_title failed: {exc}")
             return "Untitled Page"
+            
+    async def download_image(self, url: str, block_id: str) -> str | None:
+        """
+        Download an image from Notion/external URL, determine its format,
+        and save it to static/images/ folder. Returns the local static path.
+        """
+        try:
+            import os
+            import io
+            from PIL import Image
 
+            # Ensure static/images exists
+            os.makedirs("static/images", exist_ok=True)
+
+            logger.info(f"Downloading image for block {block_id} ...")
+            
+            # Use clean httpx.AsyncClient without Notion Version and Auth headers
+            # to avoid AWS S3 authorization errors
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                image_data = response.content
+
+            img = Image.open(io.BytesIO(image_data))
+            img_format = img.format.lower() if img.format else "png"
+            if img_format == "jpeg":
+                img_format = "jpg"
+
+            filename = f"{block_id}.{img_format}"
+            local_path = os.path.join("static/images", filename)
+            
+            # Save the image file
+            if img.mode in ("RGBA", "LA") and img_format == "jpg":
+                img = img.convert("RGB")
+                
+            img.save(local_path)
+            logger.info(f"Saved image to {local_path}")
+            return f"/static/images/{filename}"
+        except Exception as exc:
+            logger.error(f"Failed to download and save image {block_id}: {exc}")
+            return None
 
     async def _block_to_markdown(
         self,
         block: Dict[str, Any],
         indent: int = 0,
-    ) -> Tuple[str, List[str], List[str]]:
+    ) -> Tuple[str, List[str], List[str], List[Dict[str, Any]]]:
         """
         Convert a single Notion block to Markdown and surface any nested page/
-        database IDs for recursive processing.
+        database IDs and extracted images for recursive processing.
 
         Args:
             block: Notion block object dictionary.
             indent: Current indentation level (number of 4-space groups).
 
         Returns:
-            A three-tuple of:
+            A four-tuple of:
             - ``markdown``: Markdown string for this block.
             - ``child_page_ids``: IDs of child-page blocks discovered.
             - ``child_database_ids``: IDs of child-database blocks discovered.
+            - ``images``: Extracted image metadata dictionaries.
         """
         block_type: str = block.get("type", "")
         block_id: str = block.get("id", "")
@@ -323,6 +365,7 @@ class NotionService:
         markdown = ""
         child_pages: List[str] = []
         child_databases: List[str] = []
+        images: List[Dict[str, Any]] = []
 
         try:
             rt = lambda key: self.extract_rich_text(block.get(key, {}).get("rich_text", []))  # noqa: E731
@@ -350,6 +393,29 @@ class NotionService:
             if block_type in _block_map:
                 markdown = _block_map[block_type]()
 
+            elif block_type == "image":
+                image_info = block.get("image", {})
+                img_type = image_info.get("type", "")
+                img_url = ""
+                if img_type == "external":
+                    img_url = image_info.get("external", {}).get("url", "")
+                elif img_type == "file":
+                    img_url = image_info.get("file", {}).get("url", "")
+
+                if img_url:
+                    caption = self.extract_rich_text(image_info.get("caption", []))
+                    local_path = await self.download_image(img_url, block_id)
+                    if local_path:
+                        markdown = f"{pad}![{caption}]({local_path})\n\n"
+                        images.append({
+                            "block_id": block_id,
+                            "local_path": local_path,
+                            "caption": caption,
+                            "original_url": img_url,
+                        })
+                    else:
+                        markdown = f"{pad}![{caption}]({img_url})\n\n"
+
             elif block_type == "child_page":
                 title = block["child_page"].get("title", "Untitled Sub-page")
                 child_pages.append(block_id)
@@ -362,20 +428,21 @@ class NotionService:
 
             if has_children and block_type not in ("child_page", "child_database"):
                 for child in await self.get_block_children(block_id):
-                    child_md, sub_pages, sub_dbs = await self._block_to_markdown(child, indent + 1)
+                    child_md, sub_pages, sub_dbs, sub_images = await self._block_to_markdown(child, indent + 1)
                     markdown += child_md
                     child_pages.extend(sub_pages)
                     child_databases.extend(sub_dbs)
+                    images.extend(sub_images)
 
         except Exception as exc:
             logger.error(f"_block_to_markdown({block_id}, type={block_type}) failed: {exc}")
 
-        return markdown, child_pages, child_databases
+        return markdown, child_pages, child_databases, images
 
 
     async def fetch_page_as_document(
         self, page_id: str
-    ) -> Tuple[str, str, List[str], List[str], str]:
+    ) -> Tuple[str, str, List[str], List[str], str, List[Dict[str, Any]]]:
         """
         Fetch a page and render its content as Markdown.
 
@@ -383,12 +450,13 @@ class NotionService:
             page_id: UUID of the target Notion page.
 
         Returns:
-            A five-tuple of:
+            A six-tuple of:
             - ``title``: Page title string.
             - ``content``: Full Markdown string.
             - ``child_page_ids``: IDs of embedded child pages.
             - ``child_database_ids``: IDs of embedded child databases.
             - ``url``: Canonical Notion page URL.
+            - ``images``: Extracted image metadata list.
 
         Raises:
             Exception: Propagates errors from underlying API calls.
@@ -404,14 +472,16 @@ class NotionService:
             lines = [f"# {title}\n\n"]
             all_child_pages: List[str] = []
             all_child_dbs: List[str] = []
+            all_images: List[Dict[str, Any]] = []
 
             for block in blocks:
-                md, cp, cd = await self._block_to_markdown(block)
+                md, cp, cd, imgs = await self._block_to_markdown(block)
                 lines.append(md)
                 all_child_pages.extend(cp)
                 all_child_dbs.extend(cd)
+                all_images.extend(imgs)
 
-            return title, "".join(lines), all_child_pages, all_child_dbs, url
+            return title, "".join(lines), all_child_pages, all_child_dbs, url, all_images
 
         except Exception as exc:
             logger.error(f"fetch_page_as_document({page_id}) failed: {exc}")
@@ -436,7 +506,7 @@ class NotionService:
 
         Returns:
             List of document dicts with keys ``page_id``, ``title``,
-            ``content``, and ``url``.
+            ``content``, ``url``, and ``images``.
         """
         if visited is None:
             visited = set()
@@ -478,9 +548,15 @@ class NotionService:
 
         else:
             try:
-                title, content, child_pages, child_dbs, url = await self.fetch_page_as_document(root_id)
+                title, content, child_pages, child_dbs, url, images = await self.fetch_page_as_document(root_id)
                 documents.append(
-                    {"page_id": root_id, "title": title, "content": content, "url": url}
+                    {
+                        "page_id": root_id,
+                        "title": title,
+                        "content": content,
+                        "url": url,
+                        "images": images
+                    }
                 )
                 for pid in child_pages:
                     documents.extend(await self.crawl(pid, visited))

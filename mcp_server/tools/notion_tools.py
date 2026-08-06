@@ -169,6 +169,34 @@ class MCPToolRegistry:
                     ensure_ascii=False,
                 )
 
+            def _format_results(raw):
+                formatted = []
+                for rank, hit in enumerate(raw, start=1):
+                    hit_type = hit.get("type", "text")
+                    res = {
+                        "rank": rank,
+                        "score": round(hit.get("score") or 0.0, 6),
+                        "type": hit_type,
+                        "title": hit.get("title", "Untitled"),
+                        "url": hit.get("url", ""),
+                    }
+                    if hit_type == "image":
+                        res.update({
+                            "block_id": hit.get("block_id"),
+                            "local_path": hit.get("local_path"),
+                            "original_url": hit.get("original_url"),
+                            "caption": hit.get("caption"),
+                            "text": hit.get("text"),
+                        })
+                    else:
+                        res.update({
+                            "chunk_index": hit.get("chunk_index", 0),
+                            "text": hit.get("text", ""),
+                            "images": hit.get("images", []),
+                        })
+                    formatted.append(res)
+                return formatted
+
             try:
                 service = get_chroma_service()
 
@@ -194,17 +222,7 @@ class MCPToolRegistry:
                             limit=limit,
                         )
 
-                        results: list[dict[str, Any]] = [
-                            {
-                                "rank": rank,
-                                "score": round(hit.get("score") or 0.0, 6),
-                                "title": hit.get("title", "Untitled"),
-                                "url": hit.get("url", ""),
-                                "chunk_index": hit.get("chunk_index", 0),
-                                "text": (hit.get("text") or ""),
-                            }
-                            for rank, hit in enumerate(raw_results, start=1)
-                        ]
+                        results = _format_results(raw_results)
 
                         ls_run.add_outputs(
                             {
@@ -214,7 +232,7 @@ class MCPToolRegistry:
                                         "rank": r["rank"],
                                         "title": r["title"],
                                         "score": r["score"],
-                                        "chunk_index": r["chunk_index"],
+                                        "type": r["type"],
                                         "url": r["url"],
                                     }
                                     for r in results
@@ -229,17 +247,7 @@ class MCPToolRegistry:
                         limit=limit,
                     )
 
-                    results = [
-                        {
-                            "rank": rank,
-                            "score": round(hit.get("score") or 0.0, 6),
-                            "title": hit.get("title", "Untitled"),
-                            "url": hit.get("url", ""),
-                            "chunk_index": hit.get("chunk_index", 0),
-                            "text": (hit.get("text") or ""),
-                        }
-                        for rank, hit in enumerate(raw_results, start=1)
-                    ]
+                    results = _format_results(raw_results)
 
                 logger.info(f"[MCP:search] Returned {len(results)} result(s).")
 

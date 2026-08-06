@@ -14,6 +14,7 @@ dependencies = [
     "langsmith>=0.10.15",
     "logfire[system-metrics]>=4.37.0",
     "passlib>=1.7.4",
+    "pillow>=12.3.0",
     "psycopg2-binary>=2.9.12",
     "pydantic>=2.13.4",
     "pydantic-ai>=2.12.0",

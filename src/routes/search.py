@@ -29,8 +29,8 @@ async def search(
 
     Returns:
         JSON object with ``query``, ``collection_name``, ``results_count``,
-        and ``results`` (list of chunk dicts with ``score``, ``title``,
-        ``url``, ``text``, and ``chunk_index``).
+        and ``results`` (list of unified hits containing text chunks and/or image metadata,
+        differentiated by the ``type`` key: ``"text"`` or ``"image"``).
 
     Raises:
         HTTPException 400: When Milvus credentials are not configured.
