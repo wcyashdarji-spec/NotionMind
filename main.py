@@ -1,10 +1,23 @@
 import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from src.config import logger
 from src.database import init_db
 from src.routes import agent, auth, health, ingest, logs, search, token
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialise database schema on startup; log on shutdown."""
+    logger.info("Initializing database schema...")
+    init_db()
+    logger.info("Notion Ingestion Service is up and ready.")
+    yield
+    logger.info("Notion Ingestion Service is shutting down.")
+
 
 app = FastAPI(
     title="Notion → Zilliz Milvus Ingestion Service",
@@ -15,6 +28,7 @@ app = FastAPI(
     version="2.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 app.include_router(health.router)
@@ -45,17 +59,3 @@ async def root() -> dict[str, str]:
         "redoc": "/redoc",
         "health": "/health",
     }
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    """Log a startup message and initialize database tables when the ASGI server is ready."""
-    logger.info("Initializing database schema...")
-    init_db()
-    logger.info("Notion Ingestion Service is up and ready.")
-
-
-@app.on_event("shutdown")
-def on_shutdown() -> None:
-    """Log a shutdown message when the ASGI server stops."""
-    logger.info("Notion Ingestion Service is shutting down.")

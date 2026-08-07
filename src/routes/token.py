@@ -82,6 +82,8 @@ def generate_token(
             created_at=db_token.created_at.isoformat(),
             expires_at=db_token.expires_at.isoformat(),
         )
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error(f"Error generating token for collection '{request.collection_name}': {exc}")
         raise HTTPException(

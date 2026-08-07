@@ -15,7 +15,7 @@ def _get_engine():
         return create_engine(DATABASE_URL, pool_pre_ping=True)
     except Exception as exc:
         logger.warning(
-            f"Failed to initialize database engine for '{DATABASE_URL}': {exc}. "
+            f"Failed to initialize database engine: {exc}. "
             "Falling back to local SQLite."
         )
         return create_engine(

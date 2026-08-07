@@ -3,9 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.utils.schemas import SearchRequest
-from src.services.chroma_service import ChromaService
-from src.config import CHROMA_COLLECTION_NAME, CHROMA_DB_PATH, logger
 from src.utils.deps import get_current_token
+from src.config import CHROMA_COLLECTION_NAME, logger
+from src.services.chroma_service import get_chroma_service
 
 router = APIRouter(prefix="/api", tags=["Search"])
 
@@ -39,7 +39,7 @@ async def search(
     collection = request.collection_name or CHROMA_COLLECTION_NAME
 
     try:
-        chroma = ChromaService(db_path=CHROMA_DB_PATH)
+        chroma = get_chroma_service()
         results = await chroma.search(
             query=request.query,
             collection_name=collection,

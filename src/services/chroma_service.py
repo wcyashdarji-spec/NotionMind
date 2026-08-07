@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import asyncio
 from typing import Any, Dict, List
 
@@ -439,7 +440,6 @@ class ChromaService:
                             "text": documents_list[idx],
                         })
                     else:
-                        import re
                         text_content = documents_list[idx]
                         
                         image_paths = re.findall(r'!\[.*?\]\((/static/images/.*?)\)', text_content)
@@ -576,3 +576,23 @@ class ChromaService:
             raise
 
 
+_chroma_service: ChromaService | None = None
+
+
+def get_chroma_service() -> ChromaService:
+    """
+    Return the shared :class:`ChromaService` singleton instance,
+    creating it on the first call (lazy initialisation).
+
+    The singleton ensures the embedding model is loaded only once
+    and reused across all FastAPI request handlers and the MCP server.
+
+    Returns:
+        A connected and ready :class:`ChromaService`.
+    """
+    global _chroma_service
+    if _chroma_service is None:
+        logger.info("Initialising shared ChromaService singleton …")
+        _chroma_service = ChromaService(db_path=CHROMA_DB_PATH)
+        logger.info("ChromaService singleton ready.")
+    return _chroma_service

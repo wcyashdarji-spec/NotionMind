@@ -7,7 +7,7 @@ import jwt
 
 from src.database.models import GeneratedToken
 from src.database.connection import SessionLocal
-from src.utils.token_crypto import encode_token_str
+from src.utils.token_crypto import decode_token_str
 from src.config import JWT_ALGORITHM, JWT_ACCESS_TOKEN_EXPIRE_MINUTES, JWT_SECRET_KEY, logger
 
 _USER_TOKEN_EXPIRE_MINUTES: int = JWT_ACCESS_TOKEN_EXPIRE_MINUTES
@@ -54,6 +54,7 @@ def generate_access_token(
     
     except Exception as exc:
         logger.error(f"Error generating JWT token: {exc}")
+        raise
 
 def decode_token(
     token: str,
@@ -119,12 +120,20 @@ def verify_collection_access(
 
     db = SessionLocal()
     try:
-        encoded_token = encode_token_str(token_str)
-        db_token = (
+        tokens = (
             db.query(GeneratedToken)
-            .filter(GeneratedToken.token == encoded_token)
-            .first()
+            .filter(GeneratedToken.collection_name.in_([collection_name, "*"]))
+            .all()
         )
+        db_token = None
+        for t in tokens:
+            try:
+                if decode_token_str(t.token) == token_str:
+                    db_token = t
+                    break
+            except Exception:
+                continue
+
         if not db_token:
             logger.warning("Token verification failed: Token not found in database.")
             return False, "Authorization token not registered in database."

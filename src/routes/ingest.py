@@ -5,13 +5,12 @@ from sqlalchemy.orm import Session
 
 from src.config import (
     CHROMA_COLLECTION_NAME,
-    CHROMA_DB_PATH,
     NOTION_TOKEN,
     logger,
 )
 from src.utils.deps import get_current_token
-from src.services.chroma_service import ChromaService
 from src.services.notion_service import NotionService
+from src.services.chroma_service import get_chroma_service
 from src.database import get_db, list_ingestion_records, upsert_ingestion_record, delete_ingestion_record, IngestionRecord
 from src.utils.schemas import IngestRequest, IngestResponse, UpdateRequest, UpdateResponse, UpdateAllRequest, UpdateAllResponse, DeleteCollectionResponse
 
@@ -56,7 +55,7 @@ async def ingest(
 
     try:
         async with NotionService(token=NOTION_TOKEN) as notion:
-            chroma = ChromaService(db_path=CHROMA_DB_PATH)
+            chroma = get_chroma_service()
 
             if request.root_id:
                 logger.info(f"Crawling from root_id={request.root_id} …")
@@ -136,7 +135,7 @@ async def update_collection(
 
     try:
         async with NotionService(token=NOTION_TOKEN) as notion:
-            chroma = ChromaService(db_path=CHROMA_DB_PATH)
+            chroma = get_chroma_service()
 
             if request.root_id:
                 logger.info(f"Crawling root_id={request.root_id} for collection update …")
@@ -255,7 +254,7 @@ async def update_all_collections(
     has_success = False
 
     async with NotionService(token=NOTION_TOKEN) as notion:
-        chroma = ChromaService(db_path=CHROMA_DB_PATH)
+        chroma = get_chroma_service()
 
         for record in records:
             collection = record.collection_name
@@ -377,7 +376,7 @@ async def delete_collection(
     logger.info(f"Collection deletion requested – collection='{collection_name}'.")
 
     try:
-        chroma = ChromaService(db_path=CHROMA_DB_PATH)
+        chroma = get_chroma_service()
         delete_stats = await chroma.delete_collection(collection_name)
 
         deleted_from_db = delete_ingestion_record(db=db, collection_name=collection_name)

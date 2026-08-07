@@ -77,7 +77,7 @@ def upsert_ingestion_record(
     except Exception as exc:
         db.rollback()
         logger.error(f"Error upserting ingestion record for '{collection_name}': {exc}")
-        raise exc
+        raise
 
 
 def get_ingestion_record_by_collection(
@@ -152,7 +152,7 @@ def create_user(db: Session, email: str, hashed_password: str) -> User:
     except Exception as exc:
         db.rollback()
         logger.error(f"Error creating user '{email}': {exc}")
-        raise exc
+        raise
 
 
 def get_user_by_email(db: Session, email: str) -> User | None:
@@ -211,7 +211,7 @@ def revoke_token(db: Session, jti: str, expires_at: datetime) -> RevokedToken:
     except Exception as exc:
         db.rollback()
         logger.error(f"Error revoking token jti={jti}: {exc}")
-        raise exc
+        raise
 
 
 def is_token_revoked(db: Session, jti: str) -> bool:
@@ -258,7 +258,7 @@ def delete_ingestion_record(db: Session, collection_name: str) -> bool:
     except Exception as exc:
         db.rollback()
         logger.error(f"Error deleting ingestion record for '{collection_name}': {exc}")
-        raise exc
+        raise
 
 
 def create_generated_token(
@@ -315,7 +315,7 @@ def create_generated_token(
     except Exception as exc:
         db.rollback()
         logger.error(f"Error creating generated token for '{collection_name}': {exc}")
-        raise exc
+        raise
 
 
 def get_generated_tokens(db: Session) -> List[GeneratedToken]:
